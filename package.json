@@ -1,0 +1,9 @@
+{
+  "name": "geekbang-pdf",
+  "version": "1.0.0",
+  "description": "Save geekbang.org course pages as PDF files",
+  "main": "index.js",
+  "dependencies": {
+    "puppeteer": "^19.0.0"
+  }
+}
