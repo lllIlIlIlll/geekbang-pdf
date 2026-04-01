@@ -16,7 +16,7 @@ from src import (
     ConversionError,
     ConfigError,
 )
-from src.auth import login, get_cookies_from_existing_chrome, login_via_browser
+from src.auth import login, get_cookies_from_existing_chrome
 from src.fetcher import fetch_page, get_page_title
 from src.parser import process_html, extract_article_content
 from src.converter import convert_with_cookie, convert_chrome_page_to_pdf, write_html_to_temp, cleanup_temp_files
