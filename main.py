@@ -225,74 +225,21 @@ def browser_login_and_save(args):
         # 步骤3.5: 隐藏左侧导航栏
         print("隐藏左侧导航栏...")
         hide_nav_js = '''() => {
-            // 查找并隐藏左侧导航栏
-            const navSelectors = [
-                // 左侧边栏
-                '[class*="sidebar"]',
-                '[class*="side-bar"]',
-                '[class*="catalog"]',
-                '[class*="nav"]',
-                '[class*="menu"]',
-                '[class*="left"]',
-                // 常见导航容器
-                'aside',
-                'nav',
-                '[role="navigation"]',
-                // 极客时间特定的导航
-                '[class*="header"]',
-                '[class*="Header"]',
-                // 包含目录列表的容器
-                '[class*="articleList"]',
-                '[class*="column-nav"]'
-            ];
-
             let hiddenCount = 0;
 
-            // 方法1: 隐藏左侧固定/绝对定位的导航
-            document.querySelectorAll('*').forEach(el => {
-                const style = window.getComputedStyle(el);
-                const classes = el.className || '';
-                const rect = el.getBoundingClientRect();
-
-                // 左侧导航特征：固定或绝对定位，宽度较窄，在左侧
-                if ((style.position === 'fixed' || style.position === 'absolute') &&
-                    rect.left < 100 &&
-                    rect.width > 0 && rect.width < 400 &&
-                    rect.height > 500 &&
-                    (classes.includes('sidebar') ||
-                     classes.includes('catalog') ||
-                     classes.includes('nav') ||
-                     classes.includes('menu') ||
-                     classes.includes('left') ||
-                     classes.includes('articleList'))) {
+            // 只隐藏明确是侧边栏的顶级容器，不破坏子元素
+            // 精确匹配 Index_side 开头的 class
+            document.querySelectorAll('[class^="Index_side"]').forEach(el => {
+                if (el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE') {
                     el.style.display = 'none';
                     hiddenCount++;
                 }
             });
 
-            // 方法2: 隐藏明确是导航的 aside 或 nav 元素
-            document.querySelectorAll('aside, nav').forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const style = window.getComputedStyle(el);
-                // 如果在页面左侧且高度较大
-                if (rect.left < 50 && rect.height > 800 && rect.width < 400) {
-                    el.style.display = 'none';
-                    hiddenCount++;
-                }
-            });
-
-            // 方法3: 查找内容容器，将其拉宽
-            document.querySelectorAll('main, article, [class*="content"], [class*="main"]').forEach(el => {
-                const style = window.getComputedStyle(el);
-                const rect = el.getBoundingClientRect();
-                // 如果内容区在中间偏左位置，将其拉宽到全屏
-                if (rect.left > 50 && rect.left < 300 && rect.width < 1200) {
-                    el.style.position = 'absolute';
-                    el.style.left = '0';
-                    el.style.width = '100%';
-                    el.style.maxWidth = '100%';
-                    el.style.zIndex = '1000';
-                }
+            // 隐藏课程目录列表容器
+            document.querySelectorAll('[class^="Catalog_articleList"]').forEach(el => {
+                el.style.display = 'none';
+                hiddenCount++;
             });
 
             return { hiddenCount };
@@ -301,6 +248,20 @@ def browser_login_and_save(args):
         hide_result = article_page.evaluate(hide_nav_js)
         print(f"  隐藏导航结果: {hide_result}")
         article_page.wait_for_timeout(1000)
+
+        # 获取页面标题用于文件名
+        print("获取页面标题...")
+        page_title = article_page.title()
+        print(f"  页面标题: {page_title}")
+        # 清理标题中的非法字符
+        safe_title = "".join(c for c in page_title if c.isalnum() or c in (' ', '-', '_', '｜')).strip()
+        safe_title = safe_title.replace(' ', '_')
+        if args.name:
+            output_name = args.name
+        else:
+            output_name = safe_title
+        output_path = output_dir / f"{output_name}.pdf"
+        print(f"  输出文件名: {output_name}.pdf")
 
         # 步骤4: 查找并滚动文章内容容器
         print("查找文章内容容器...")
