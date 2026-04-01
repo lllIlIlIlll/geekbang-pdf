@@ -9,6 +9,407 @@ from pathlib import Path
 from .exceptions import ConversionError
 
 
+def convert_with_context(url, context, output_path, options=None):
+    """Convert a URL to PDF using an existing browser context.
+
+    This function reuses an existing browser context to generate PDF,
+    avoiding the need to login for each URL.
+
+    Args:
+        url: URL to convert
+        context: Existing Playwright browser context (with cookies already set)
+        output_path: Path for output PDF
+        options: Optional dict with keys:
+            - page_size: Page size (default: 'A4')
+            - landscape: Whether to use landscape orientation
+
+    Returns:
+        Path: Path to generated PDF
+
+    Raises:
+        ConversionError: If conversion fails
+    """
+    options = options or {}
+    page_size = options.get("page_size", "A4")
+    landscape = options.get("landscape", False)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create a new page in the existing context
+    page = context.new_page()
+
+    try:
+        # Set User-Agent
+        page.set_extra_http_headers({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+
+        # Navigate to URL
+        print(f"  正在打开: {url}")
+        page.goto(url, wait_until="load", timeout=60000)
+        page.wait_for_timeout(8000)
+
+        # Remove floating layers
+        print("  移除页面浮层...")
+        page.evaluate('''() => {
+            const toRemove = [];
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed' || style.position === 'sticky') {
+                    const text = el.innerText || '';
+                    const classes = el.className || '';
+                    if ((text.includes('登录') && text.includes('注册')) ||
+                        text.includes('推荐试读') ||
+                        text.includes('仅针对订阅') ||
+                        classes.includes('modal') ||
+                        classes.includes('popup') ||
+                        classes.includes('overlay')) {
+                        toRemove.push(el);
+                    }
+                }
+            });
+            toRemove.forEach(el => el.remove());
+        }''')
+        page.wait_for_timeout(1000)
+
+        # Hide left sidebar and expand content area
+        print("  隐藏左侧导航栏并扩展内容区域...")
+        page.evaluate('''() => {
+            let hiddenCount = 0;
+
+            // 1. Hide left sidebar
+            document.querySelectorAll('[class*="Index_side"]').forEach(el => {
+                el.style.display = 'none';
+                hiddenCount++;
+            });
+
+            // 2. Hide right fixed elements
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                const classes = el.className || '';
+                if (style.position === 'fixed' && rect.left > 1000 && rect.width < 400) {
+                    el.style.display = 'none';
+                    hiddenCount++;
+                }
+            });
+
+            // 3. Find and expand main content area
+            const contentSelectors = [
+                '[class*="Index_contentWrap"]',
+                '[class*="contentWrap"]',
+                '[class*="article-container"]',
+                'article',
+                'main'
+            ];
+
+            let contentEl = null;
+            for (const sel of contentSelectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 500 && rect.height > 300) {
+                        contentEl = el;
+                        break;
+                    }
+                }
+            }
+
+            if (contentEl) {
+                contentEl.style.position = 'absolute';
+                contentEl.style.left = '0';
+                contentEl.style.top = '0';
+                contentEl.style.width = '100%';
+                contentEl.style.maxWidth = 'none';
+                contentEl.style.height = '100%';
+                contentEl.style.zIndex = '100';
+
+                const scrollContainer = contentEl.querySelector('[class*="contentWrapper"], [class*="scroller"], .simplebar-content-wrapper');
+                if (scrollContainer) {
+                    scrollContainer.style.position = 'absolute';
+                    scrollContainer.style.left = '0';
+                    scrollContainer.style.width = '100%';
+                }
+            }
+
+            return { hiddenCount, contentEl: contentEl ? contentEl.className : null };
+        }''')
+        page.wait_for_timeout(1000)
+
+        # Get page title for filename
+        page_title = page.title()
+        safe_title = "".join(c for c in page_title if c.isalnum() or c in (' ', '-', '_', '｜')).strip()
+        safe_title = safe_title.replace(' ', '_')
+
+        # If output_path is the default name, use the page title
+        if output_path.name == "geekbang_article.pdf":
+            output_path = output_path.parent / f"{safe_title}.pdf"
+
+        print(f"  页面标题: {page_title}")
+        print(f"  输出文件: {output_path.name}")
+
+        # Find and scroll content container
+        print("  查找文章内容容器...")
+        container_info = page.evaluate('''() => {
+            const selectors = [
+                '[class*="article"]',
+                '[class*="content"]',
+                '[class*="article-content"]',
+                '[class*="post-content"]',
+                '[id*="article"]',
+                '[id*="content"]',
+                'main',
+                'article',
+                '.main-content'
+            ];
+
+            let contentContainer = null;
+            let maxHeight = 0;
+
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const rect = el.getBoundingClientRect();
+                    const scrollHeight = el.scrollHeight;
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav')) {
+                        maxHeight = scrollHeight;
+                        contentContainer = el;
+                    }
+                }
+            });
+
+            if (!contentContainer) {
+                for (const selector of selectors) {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        const rect = el.getBoundingClientRect();
+                        const scrollHeight = el.scrollHeight;
+                        if (scrollHeight > 500 && rect.height > 500) {
+                            contentContainer = el;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!contentContainer) {
+                let maxScrollHeight = 0;
+                document.body.querySelectorAll(':scope > div').forEach(el => {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxScrollHeight && rect.height > 500) {
+                        maxScrollHeight = scrollHeight;
+                        contentContainer = el;
+                    }
+                });
+            }
+
+            if (contentContainer) {
+                return {
+                    found: true,
+                    tagName: contentContainer.tagName,
+                    className: contentContainer.className,
+                    id: contentContainer.id,
+                    scrollHeight: contentContainer.scrollHeight,
+                    clientHeight: contentContainer.clientHeight,
+                    rectHeight: contentContainer.getBoundingClientRect().height
+                };
+            }
+
+            return { found: false };
+        }''')
+        print(f"  容器信息: {container_info}")
+
+        # Scroll to load all content
+        print("  滚动加载完整内容...")
+        scroll_result = page.evaluate('''() => {
+            let scrollContainer = null;
+            let maxHeight = 0;
+
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav') &&
+                        !el.className.includes('list')) {
+                        maxHeight = scrollHeight;
+                        scrollContainer = el;
+                    }
+                }
+            });
+
+            if (!scrollContainer) {
+                window.scrollTo(0, document.body.scrollHeight);
+                return { method: 'window', scrollHeight: document.body.scrollHeight };
+            }
+
+            const finalHeight = scrollContainer.scrollHeight;
+            let scrolled = 0;
+            const scrollStep = window.innerHeight;
+
+            while (scrolled < finalHeight) {
+                scrollContainer.scrollTop += scrollStep;
+                scrolled += scrollStep;
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(() => {});
+                }
+            }
+
+            scrollContainer.scrollTop = 0;
+
+            return {
+                method: 'container',
+                containerClass: scrollContainer.className,
+                scrollHeight: finalHeight
+            };
+        }''')
+        print(f"  滚动结果: {scroll_result}")
+        page.wait_for_timeout(2000)
+
+        # Get final page height
+        final_height = page.evaluate("document.documentElement.scrollHeight")
+        print(f"  页面总高度: {final_height}px")
+
+        # Scroll back to top
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(1000)
+
+        # Set viewport
+        viewport_width = 1920
+        viewport_height = max(final_height, 4000)
+        print(f"  设置视口: {viewport_width} x {viewport_height}")
+        page.set_viewport_size({"width": viewport_width, "height": viewport_height})
+        page.wait_for_timeout(2000)
+
+        # Ensure content area is expanded to full screen
+        print("  确保内容区域全屏显示...")
+        page.evaluate('''() => {
+            const contentEl = document.querySelector('[class*="Index_contentWrap"]');
+            if (contentEl) {
+                contentEl.style.position = 'absolute';
+                contentEl.style.left = '0';
+                contentEl.style.top = '0';
+                contentEl.style.width = '1920px';
+                contentEl.style.height = '100%';
+                contentEl.style.maxWidth = 'none';
+                contentEl.style.zIndex = '100';
+
+                const scrollContainer = contentEl.querySelector('[class*="scroller"], .simplebar-content-wrapper');
+                if (scrollContainer) {
+                    scrollContainer.style.position = 'absolute';
+                    scrollContainer.style.left = '0';
+                    scrollContainer.style.width = '1920px';
+                    scrollContainer.style.maxHeight = 'none';
+                    scrollContainer.style.height = 'auto';
+                    scrollContainer.style.overflow = 'visible';
+                }
+
+                return { expanded: true, width: 1920 };
+            }
+
+            document.body.querySelectorAll(':scope > div').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.left < 100 && rect.width < 1000) {
+                    el.style.position = 'absolute';
+                    el.style.left = '0';
+                    el.style.width = '1920px';
+                }
+            });
+
+            return { expanded: false };
+        }''')
+        page.wait_for_timeout(1000)
+
+        # Expand content container to full height
+        print("  展开内容容器到完整高度...")
+        expand_result = page.evaluate('''() => {
+            let scrollContainer = null;
+            let maxHeight = 0;
+
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav') &&
+                        !el.className.includes('list')) {
+                        maxHeight = scrollHeight;
+                        scrollContainer = el;
+                    }
+                }
+            });
+
+            if (!scrollContainer) {
+                return { expanded: false, error: 'No container found' };
+            }
+
+            const originalScrollHeight = scrollContainer.scrollHeight;
+            scrollContainer.scrollTop = originalScrollHeight;
+            const loadedScrollHeight = scrollContainer.scrollHeight;
+            scrollContainer.scrollTop = 0;
+
+            scrollContainer.style.maxHeight = 'none';
+            scrollContainer.style.height = (loadedScrollHeight + 500) + 'px';
+            scrollContainer.style.overflow = 'visible';
+
+            const parent = scrollContainer.parentElement;
+            if (parent && (parent.className.includes('simplebar') || parent.className.includes('SimpleBar'))) {
+                parent.style.maxHeight = 'none';
+                parent.style.height = (loadedScrollHeight + 500) + 'px';
+                parent.style.overflow = 'visible';
+                const simplebarEl = parent.querySelector('.simplebar-scrollbar');
+                if (simplebarEl) {
+                    simplebarEl.style.display = 'none';
+                }
+            }
+
+            return {
+                expanded: true,
+                originalScrollHeight: originalScrollHeight,
+                loadedScrollHeight: loadedScrollHeight,
+                className: scrollContainer.className
+            };
+        }''')
+        print(f"  展开结果: {expand_result}")
+        page.wait_for_timeout(2000)
+
+        # Generate PDF
+        content_height = expand_result.get('loadedScrollHeight', 25000)
+        pdf_width = 1920
+        print(f"  正在生成 PDF (宽度: {pdf_width}px, 内容高度: {content_height}px)...")
+
+        page.pdf(
+            path=str(output_path),
+            width=f"{pdf_width}px",
+            height=f"{content_height}px",
+            print_background=True,
+            margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
+        )
+
+        return output_path
+
+    finally:
+        # Always close the page when done
+        page.close()
+
+
 def get_page_content_from_chrome(debugging_port=28800):
     """Get page content from existing Chrome session.
 
