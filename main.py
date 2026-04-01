@@ -220,7 +220,87 @@ def browser_login_and_save(args):
             });
             toRemove.forEach(el => el.remove());
         }''')
-        article_page.wait_for_timeout(2000)
+        article_page.wait_for_timeout(1000)
+
+        # 步骤3.5: 隐藏左侧导航栏
+        print("隐藏左侧导航栏...")
+        hide_nav_js = '''() => {
+            // 查找并隐藏左侧导航栏
+            const navSelectors = [
+                // 左侧边栏
+                '[class*="sidebar"]',
+                '[class*="side-bar"]',
+                '[class*="catalog"]',
+                '[class*="nav"]',
+                '[class*="menu"]',
+                '[class*="left"]',
+                // 常见导航容器
+                'aside',
+                'nav',
+                '[role="navigation"]',
+                // 极客时间特定的导航
+                '[class*="header"]',
+                '[class*="Header"]',
+                // 包含目录列表的容器
+                '[class*="articleList"]',
+                '[class*="column-nav"]'
+            ];
+
+            let hiddenCount = 0;
+
+            // 方法1: 隐藏左侧固定/绝对定位的导航
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                const classes = el.className || '';
+                const rect = el.getBoundingClientRect();
+
+                // 左侧导航特征：固定或绝对定位，宽度较窄，在左侧
+                if ((style.position === 'fixed' || style.position === 'absolute') &&
+                    rect.left < 100 &&
+                    rect.width > 0 && rect.width < 400 &&
+                    rect.height > 500 &&
+                    (classes.includes('sidebar') ||
+                     classes.includes('catalog') ||
+                     classes.includes('nav') ||
+                     classes.includes('menu') ||
+                     classes.includes('left') ||
+                     classes.includes('articleList'))) {
+                    el.style.display = 'none';
+                    hiddenCount++;
+                }
+            });
+
+            // 方法2: 隐藏明确是导航的 aside 或 nav 元素
+            document.querySelectorAll('aside, nav').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                // 如果在页面左侧且高度较大
+                if (rect.left < 50 && rect.height > 800 && rect.width < 400) {
+                    el.style.display = 'none';
+                    hiddenCount++;
+                }
+            });
+
+            // 方法3: 查找内容容器，将其拉宽
+            document.querySelectorAll('main, article, [class*="content"], [class*="main"]').forEach(el => {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                // 如果内容区在中间偏左位置，将其拉宽到全屏
+                if (rect.left > 50 && rect.left < 300 && rect.width < 1200) {
+                    el.style.position = 'absolute';
+                    el.style.left = '0';
+                    el.style.width = '100%';
+                    el.style.maxWidth = '100%';
+                    el.style.zIndex = '1000';
+                }
+            });
+
+            return { hiddenCount };
+        }'''
+
+        hide_result = article_page.evaluate(hide_nav_js)
+        print(f"  隐藏导航结果: {hide_result}")
+        article_page.wait_for_timeout(1000)
 
         # 步骤4: 查找并滚动文章内容容器
         print("查找文章内容容器...")
@@ -456,15 +536,19 @@ def browser_login_and_save(args):
         print(f"  展开结果: {expand_result}")
         article_page.wait_for_timeout(2000)
 
-        # 步骤8: 生成 PDF - 使用 height 参数指定页面高度
+        # 步骤8: 生成 PDF - 使用 A3 页面尺寸
         content_height = expand_result.get('loadedScrollHeight', 25000)
-        print(f"正在生成 PDF (内容高度: {content_height}px)...")
+        print(f"正在生成 PDF (A3版面, 内容高度: {content_height}px)...")
+        # A3: 297mm x 420mm = 1122px x 1587px (按 96dpi)
+        # 转换为 PDF 点数: 1mm = 2.8346 点, 所以 297mm = 842pt, 420mm = 1190pt
+        a3_width = "297mm"
+        a3_height = "420mm"
         article_page.pdf(
             path=str(output_path),
-            width="1920px",
-            height=f"{content_height}px",
+            width=a3_width,
+            height=a3_height,
             print_background=True,
-            margin={"top": "0", "bottom": "0", "left": "0", "right": "0"}
+            margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
         )
 
         # 关闭文章页面
