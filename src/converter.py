@@ -1,4 +1,4 @@
-"""Puppeteer-based PDF conversion module."""
+"""PDF conversion module using Playwright and Puppeteer."""
 
 import os
 import tempfile
@@ -159,148 +159,19 @@ def write_html_to_temp(html_content):
         raise
 
 
-def convert_to_pdf(html_path, output_path, options=None):
-    """Convert HTML file to PDF using Puppeteer.
-
-    Args:
-        html_path: Path to HTML file
-        output_path: Path for output PDF
-        options: Optional dict with keys:
-            - page_size: Page size (default: 'A4')
-            - landscape: Whether to use landscape orientation
-            - print_background: Whether to print background graphics
-
-    Returns:
-        Path: Path to generated PDF
-
-    Raises:
-        ConversionError: If conversion fails
-    """
-    options = options or {}
-    page_size = options.get("page_size", "A4")
-    landscape = options.get("landscape", False)
-    print_background = options.get("print_background", True)
-
-    # Ensure output directory exists
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create Puppeteer script
-    script_content = f"""
-const puppeteer = require('puppeteer');
-const path = require('path');
-
-(async () => {{
-    const browser = await puppeteer.launch({{
-        headless: true,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }});
-
-    const page = await browser.newPage();
-
-    // Set viewport
-    await page.setViewport({{
-        width: 1200,
-        height: 800,
-        deviceScaleFactor: 1
-    }});
-
-    // Load HTML file
-    const htmlPath = '{html_path.as_posix()}';
-    await page.goto(`file:///${{htmlPath}}`, {{
-        waitUntil: 'networkidle0'
-    }});
-
-    // Wait a bit for any dynamic content
-    await page.waitForTimeout(1000);
-
-    // Generate PDF
-    await page.pdf({{
-        path: '{output_path.as_posix()}',
-        format: '{page_size}',
-        landscape: {str(landscape).lower()},
-        printBackground: {str(print_background).lower()},
-        margin: {{
-            top: '20mm',
-            bottom: '20mm',
-            left: '15mm',
-            right: '15mm'
-        }}
-    }});
-
-    await browser.close();
-    console.log('PDF generated successfully');
-}})();
-"""
-
-    # Write script to temp file
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".js",
-        prefix="puppeteer_script_",
-        delete=False
-    ) as f:
-        f.write(script_content)
-        script_path = f.name
-
-    try:
-        # Get project root for node_modules
-        project_root = Path(__file__).parent.parent
-        node_modules_path = project_root / "node_modules"
-
-        # Set NODE_PATH so puppeteer can be found
-        env = os.environ.copy()
-        env["NODE_PATH"] = str(node_modules_path)
-
-        # Run the script with Node.js
-        result = subprocess.run(
-            ["node", script_path],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
-            cwd=str(project_root)  # Run from project root
-        )
-
-        if result.returncode != 0:
-            raise ConversionError(
-                f"Puppeteer conversion failed: {result.stderr}"
-            )
-
-        if not output_path.exists():
-            raise ConversionError(
-                f"PDF was not generated at {output_path}"
-            )
-
-        return output_path
-
-    except subprocess.TimeoutExpired:
-        raise ConversionError("PDF conversion timed out")
-    except subprocess.SubprocessError as e:
-        raise ConversionError(f"PDF conversion failed: {str(e)}")
-    finally:
-        # Clean up script
-        try:
-            os.unlink(script_path)
-        except OSError:
-            pass
-
-
-def convert_url_to_pdf(url, output_path, cookies=None, options=None):
-    """Convert a URL directly to PDF using Puppeteer.
+def convert_with_cookie(url, cookie, output_path, options=None):
+    """Convert a URL to PDF using Playwright with provided cookie.
 
     This handles SPA (Single Page Applications) that require JavaScript rendering.
 
     Args:
         url: URL to convert
+        cookie: Cookie string for authentication
         output_path: Path for output PDF
-        cookies: Optional cookie string or dict for authentication
         options: Optional dict with keys:
             - page_size: Page size (default: 'A4')
             - landscape: Whether to use landscape orientation
-            - print_background: Whether to print background graphics
-            - wait_time: Seconds to wait for dynamic content (default: 3)
+            - wait_time: Seconds to wait for dynamic content (default: 5)
 
     Returns:
         Path: Path to generated PDF
@@ -311,88 +182,117 @@ def convert_url_to_pdf(url, output_path, cookies=None, options=None):
     options = options or {}
     page_size = options.get("page_size", "A4")
     landscape = options.get("landscape", False)
-    print_background = options.get("print_background", True)
-    wait_time = options.get("wait_time", 3)
+    wait_time = options.get("wait_time", 5)
 
-    # Ensure output directory exists
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Parse cookies into JavaScript array format
-    cookies_js = "[]"
-    if cookies:
-        if isinstance(cookies, str):
-            from .fetcher import parse_cookie_string
-            cookie_dict = parse_cookie_string(cookies)
-        else:
-            cookie_dict = cookies
+    # Parse cookie string into Playwright format
+    cookies = []
+    if cookie:
+        for part in cookie.split(";"):
+            part = part.strip()
+            if "=" in part:
+                name, value = part.split("=", 1)
+                cookies.append({
+                    "name": name.strip(),
+                    "value": value.strip(),
+                    "domain": ".geekbang.org",
+                    "path": "/"
+                })
 
-        cookies_js = json.dumps([
-            {"name": k, "value": v, "domain": ".geekbang.org", "path": "/"}
-            for k, v in cookie_dict.items()
-        ])
+    cookies_json = json.dumps(cookies)
 
-    # Create Puppeteer script for URL
+    # Create Playwright script
     script_content = f"""
-const puppeteer = require('puppeteer');
+const {{ chromium }} = require('playwright');
 
 (async () => {{
-    const browser = await puppeteer.launch({{
-        headless: true,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    const browser = await chromium.launch({{
+        headless: false,
+        args: [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-infobars',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
     }});
 
-    const page = await browser.newPage();
+    // Stealth mode - hide automation
+    const context = await browser.newContext({{
+        viewport: {{ width: 1920, height: 1080 }},
+        user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }});
 
-    // Set viewport
-    await page.setViewport({{
-        width: 1200,
-        height: 800,
-        deviceScaleFactor: 1
+    const page = await context.newPage();
+
+    // Hide webdriver property
+    await page.addInitScript(() => {{
+        Object.defineProperty(navigator, 'webdriver', {{ get: () => false }});
     }});
 
     // Set cookies if provided
-    const cookies = {cookies_js};
+    const cookies = {cookies_json};
     if (cookies.length > 0) {{
-        await page.setCookie(...cookies);
+        await context.addCookies(cookies);
     }}
 
     // Navigate to URL
+    console.log('Navigating to:', '{url}');
     await page.goto('{url}', {{
-        waitUntil: 'networkidle2',
-        timeout: 60000
+        waitUntil: 'load',
+        timeout: 30000
     }});
 
-    // Wait for dynamic content to load
+    // Wait for initial content to load
     await page.waitForTimeout({wait_time * 1000});
 
-    // Scroll to bottom to load all content
-    await page.evaluate(() => {{
-        return new Promise((resolve) => {{
-            let totalHeight = 0;
-            const distance = 100;
-            const timer = setInterval(() => {{
-                const scrollHeight = document.body.scrollHeight;
-                window.scrollBy(0, distance);
-                totalHeight += distance;
-                if(totalHeight >= scrollHeight){{
-                    clearInterval(timer);
-                    resolve();
+    // Scroll to bottom multiple times to load all dynamic content
+    console.log('Scrolling to load all content...');
+    await page.evaluate(async () => {{
+        // Scroll down multiple times, waiting for new content to load
+        let lastHeight = 0;
+        let sameHeightCount = 0;
+        const maxScrolls = 50;  // Max number of scroll attempts
+
+        for (let i = 0; i < maxScrolls; i++) {{
+            // Scroll to bottom
+            window.scrollTo(0, document.body.scrollHeight);
+
+            // Wait for content to load
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Check if we've reached the bottom
+            let newHeight = document.body.scrollHeight;
+            if (newHeight === lastHeight) {{
+                sameHeightCount++;
+                if (sameHeightCount >= 3) {{
+                    // Stop scrolling if height hasn't changed 3 times in a row
+                    break;
                 }}
-            }}, 100);
-        }});
+            }} else {{
+                sameHeightCount = 0;
+            }}
+            lastHeight = newHeight;
+        }}
+
+        // Scroll back to top
+        window.scrollTo(0, 0);
+        await new Promise(resolve => setTimeout(resolve, 500));
     }});
 
     // Wait after scrolling
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // Generate PDF
+    console.log('Generating PDF...');
     await page.pdf({{
         path: '{output_path.as_posix()}',
         format: '{page_size}',
         landscape: {str(landscape).lower()},
-        printBackground: {str(print_background).lower()},
+        printBackground: true,
+        fullPage: true,
         margin: {{
             top: '20mm',
             bottom: '20mm',
@@ -410,8 +310,9 @@ const puppeteer = require('puppeteer');
     with tempfile.NamedTemporaryFile(
         mode="w",
         suffix=".js",
-        prefix="puppeteer_script_",
-        delete=False
+        prefix="playwright_script_",
+        delete=False,
+        encoding="utf-8"
     ) as f:
         f.write(script_content)
         script_path = f.name
@@ -421,7 +322,7 @@ const puppeteer = require('puppeteer');
         project_root = Path(__file__).parent.parent
         node_modules_path = project_root / "node_modules"
 
-        # Set NODE_PATH so puppeteer can be found
+        # Set NODE_PATH so playwright can be found
         env = os.environ.copy()
         env["NODE_PATH"] = str(node_modules_path)
 
@@ -437,7 +338,7 @@ const puppeteer = require('puppeteer');
 
         if result.returncode != 0:
             raise ConversionError(
-                f"Puppeteer conversion failed: {result.stderr}"
+                f"Playwright conversion failed: {result.stderr}"
             )
 
         if not output_path.exists():

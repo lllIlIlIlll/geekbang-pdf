@@ -16,10 +16,11 @@ from src import (
     ConversionError,
     ConfigError,
 )
-from src.auth import login, get_cookies_from_existing_chrome
+from src.auth import login, get_cookies_from_existing_chrome, login_via_browser
 from src.fetcher import fetch_page, get_page_title
 from src.parser import process_html, extract_article_content
-from src.converter import convert_to_pdf, convert_url_to_pdf, convert_chrome_page_to_pdf, write_html_to_temp, cleanup_temp_files
+from src.converter import convert_with_cookie, convert_chrome_page_to_pdf, write_html_to_temp, cleanup_temp_files
+from playwright.sync_api import sync_playwright
 from config.config import (
     load_config,
     save_config,
@@ -31,190 +32,62 @@ from config.config import (
 
 
 def parse_args():
-    """Parse command line arguments.
-
-    Returns:
-        Namespace: Parsed arguments
-    """
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Save geekbang.org course pages as PDF files",
+        description="保存极客时间课程页面为 PDF 文件",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Login to get cookie
-  python main.py --login
+使用示例:
+  # 使用浏览器登录（推荐）
+  python main.py <url> --browser-login
 
-  # Save a course page using saved cookie
-  python main.py https://time.geekbang.org/column/article/12345 -o ./output
-
-  # Save with custom output name
-  python main.py https://time.geekbang.org/column/article/12345 -n my_article -o ./output
-
-  # Use cookie directly
-  python main.py https://time.geekbang.org/column/article/12345 --cookie "abc123..."
-
-  # Use existing Chrome session to get cookie
-  python main.py https://time.geekbang.org/column/article/12345 -o ./output --use-chrome
-
-  # Save with specific page size
-  python main.py https://time.geekbang.org/column/article/12345 --page-size Letter
+  # 使用已保存的 Cookie
+  python main.py <url> --use-config
         """
     )
 
-    parser.add_argument(
-        "url",
-        nargs="?",
-        help="GeekBang article URL to save as PDF"
-    )
-
-    parser.add_argument(
-        "-o", "--output",
-        metavar="DIR",
-        help="Output directory for PDF file"
-    )
-
-    parser.add_argument(
-        "-n", "--name",
-        metavar="NAME",
-        help="Output filename (without extension)"
-    )
-
-    parser.add_argument(
-        "--cookie",
-        metavar="COOKIE",
-        help="Session cookie for authentication"
-    )
-
-    parser.add_argument(
-        "--use-config",
-        action="store_true",
-        help="Use cookie from config file"
-    )
-
-    parser.add_argument(
-        "--login",
-        action="store_true",
-        help="Login to geekbang.org and save cookie"
-    )
-
-    parser.add_argument(
-        "--use-chrome",
-        action="store_true",
-        help="Get cookie from existing Chrome browser session"
-    )
-
-    parser.add_argument(
-        "--chrome-profile",
-        metavar="PROFILE",
-        default="Default",
-        help="Chrome profile name (default: Default)"
-    )
-
-    parser.add_argument(
-        "--email",
-        metavar="EMAIL",
-        help="Email for login (use with --login)"
-    )
-
-    parser.add_argument(
-        "--password",
-        metavar="PASSWORD",
-        help="Password for login (use with --login)"
-    )
-
-    parser.add_argument(
-        "--page-size",
-        choices=["A4", "Letter", "Legal"],
-        default="A4",
-        help="Page size for PDF (default: A4)"
-    )
-
-    parser.add_argument(
-        "--landscape",
-        action="store_true",
-        help="Use landscape orientation"
-    )
-
-    parser.add_argument(
-        "--no-download-images",
-        action="store_true",
-        help="Don't download images locally"
-    )
-
-    parser.add_argument(
-        "--set-default-dir",
-        metavar="DIR",
-        help="Set default output directory in config"
-    )
+    parser.add_argument("url", nargs="?", help="极客时间文章 URL")
+    parser.add_argument("-o", "--output", metavar="DIR", help="PDF 输出目录")
+    parser.add_argument("-n", "--name", metavar="NAME", help="输出文件名")
+    parser.add_argument("--cookie", metavar="COOKIE", help="会话 Cookie")
+    parser.add_argument("--use-config", action="store_true", help="使用配置文件中的 Cookie")
+    parser.add_argument("--use-chrome", action="store_true", help="从 Chrome 浏览器获取 Cookie")
+    parser.add_argument("--login", action="store_true", help="手动登录并保存 Cookie")
+    parser.add_argument("--browser-login", action="store_true", help="通过浏览器登录")
+    parser.add_argument("--page-size", choices=["A4", "Letter", "Legal"], default="A4")
+    parser.add_argument("--landscape", action="store_true")
+    parser.add_argument("--set-default-dir", metavar="DIR")
 
     return parser.parse_args()
 
 
 def handle_login(args):
-    """Handle login operation.
-
-    Args:
-        args: Parsed arguments
-
-    Returns:
-        int: Exit code
-    """
-    email = args.email
-    password = args.password
-
-    if not email or not password:
-        print("Error: --email and --password are required for login")
-        return 1
-
+    """Handle login operation."""
     try:
-        print(f"Logging in as {email}...")
-        cookie = login(email, password)
+        print("正在登录极客时间...")
+        cookie = login(email=args.email, password=args.password, headless=False, interactive=True)
         set_cookie(cookie)
-        print("Login successful! Cookie saved to config.")
+        print("登录成功！Cookie 已保存。")
         return 0
     except AuthError as e:
-        print(f"Login failed: {e}")
+        print(f"登录失败: {e}")
         return 1
 
 
-def save_page(args):
-    """Save a page as PDF.
+def browser_login_and_save(args):
+    """Browser login then navigate to URL and save as PDF.
 
-    Args:
-        args: Parsed arguments
-
-    Returns:
-        int: Exit code
+    This function:
+    1. Opens login page in a new tab
+    2. Waits for user to login manually
+    3. Opens article URL in another tab
+    4. Waits for content to load
+    5. Removes floating layers
+    6. Scrolls to load all content
+    7. Generates PDF with full_page=True
     """
-    # Determine cookie to use
-    cookie = None
-    if args.cookie:
-        cookie = args.cookie
-    elif args.use_config:
-        cookie = get_cookie()
-        if not cookie:
-            print("Error: No cookie found in config. Please login first.")
-            return 1
-    elif args.use_chrome:
-        try:
-            print("Getting cookie from Chrome...")
-            cookie = get_cookies_from_existing_chrome(debugging_port=28800)
-            print("Successfully obtained cookie from Chrome")
-        except AuthError as e:
-            print(f"Failed to get cookie from Chrome: {e}")
-            return 1
-    else:
-        # Try to use cookie from config
-        cookie = get_cookie()
-
-    if not cookie:
-        print("Error: No cookie provided. Use --cookie, --use-config, --use-chrome, or login first.")
-        print("Run with --login to authenticate.")
-        return 1
-
-    # Validate URL
     if not args.url:
-        print("Error: URL is required")
+        print("错误: URL 是必需的")
         return 1
 
     # Determine output directory
@@ -222,92 +95,455 @@ def save_page(args):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        # Determine output filename
-        if args.name:
-            output_name = args.name
-        else:
-            # Use a generic name first, will rename after getting title
-            output_name = "geekbang_article"
+    # Determine output filename
+    if args.name:
+        output_name = args.name
+    else:
+        output_name = "geekbang_article"
 
-        output_path = output_dir / f"{output_name}.pdf"
+    output_path = output_dir / f"{output_name}.pdf"
 
-        # For SPA pages, use existing Chrome session to get page content
-        print(f"Converting page from existing Chrome session to PDF...")
-        print("(Using your already logged-in session)")
+    print("\n" + "="*50)
+    print("极客时间 PDF 生成器")
+    print("="*50)
+    print()
+    print("请在浏览器中完成以下步骤:")
+    print("1. 登录极客时间")
+    print("2. 登录成功后，在终端按 Enter 键继续")
+    print()
 
-        convert_chrome_page_to_pdf(
-            28800,  # Chrome debugging port
-            output_path,
-            options={
-                "page_size": args.page_size,
-                "landscape": args.landscape,
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+
+        # 步骤1: 打开登录页面
+        print("正在打开登录页面...")
+        page.goto("https://account.geekbang.org/login", wait_until="load", timeout=60000)
+
+        # 等待用户登录 - 自动检测登录状态
+        print("等待登录完成...")
+
+        # 检查登录状态的 JavaScript
+        check_login_js = '''() => {
+            // 检查是否已登录：查找用户头像或用户信息元素
+            const userElements = document.querySelectorAll('[class*="user"], [class*="avatar"], [class*="profile"]');
+            const loginButton = document.querySelector('[class*="login"], [class*="signin"]');
+
+            // 检查 URL 是否已经离开登录页
+            const isOnLoginPage = window.location.href.includes('account.geekbang.org/login');
+
+            // 检查是否有用户信息 cookie 相关的元素
+            const hasUserInfo = document.querySelector('.user-info, .user-name, .avatar, [class*="loginSuccess"]');
+
+            return {
+                isOnLoginPage: isOnLoginPage,
+                hasUserElements: userElements.length > 0,
+                hasLoginButton: loginButton !== null,
+                hasUserInfo: hasUserInfo !== null,
+                url: window.location.href
+            };
+        }'''
+
+        # 等待登录完成 - 轮询检查登录状态
+        max_wait_time = 120  # 最多等待 120 秒
+        poll_interval = 2  # 每 2 秒检查一次
+        elapsed = 0
+        login_detected = False
+
+        while elapsed < max_wait_time:
+            page.wait_for_timeout(poll_interval * 1000)
+            elapsed += poll_interval
+
+            try:
+                login_status = page.evaluate(check_login_js)
+                print(f"  登录状态检查: {elapsed}/{max_wait_time}s - URL: {login_status['url'][:60]}...")
+
+                # 如果 URL 已经离开登录页，说明登录成功
+                if not login_status['isOnLoginPage']:
+                    print("  检测到已离开登录页，登录成功!")
+                    login_detected = True
+                    break
+
+                # 如果页面包含用户信息元素，说明已登录
+                if login_status['hasUserInfo'] or (login_status['hasUserElements'] and not login_status['hasLoginButton']):
+                    print("  检测到用户信息，已登录")
+                    login_detected = True
+                    break
+
+            except Exception as e:
+                # 页面可能正在导航，忽略错误继续等待
+                print(f"  检查登录状态时发生错误 (可能是导航中): {str(e)[:50]}...")
+                pass
+
+        # 如果超时且未检测到登录，等待用户操作
+        if not login_detected:
+            print("  等待超时，请在浏览器中完成登录...")
+            page.wait_for_timeout(30000)  # 再等待 30 秒
+
+        # 步骤2: 在新标签页打开目标文章
+        print(f"正在打开文章: {args.url}")
+
+        # 创建新页面（标签）
+        article_page = context.new_page()
+        article_page.goto(args.url, wait_until="load", timeout=60000)
+        article_page.wait_for_timeout(8000)
+
+        # 保存 Cookie
+        cookies = context.cookies()
+        gb_cookies = [c for c in cookies if 'geekbang' in c.get('domain', '').lower()]
+        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in gb_cookies])
+        if cookie_str:
+            set_cookie(cookie_str)
+            print(f"Cookie 已保存 (长度: {len(cookie_str)})")
+
+        # 步骤3: 移除浮层
+        print("移除页面浮层...")
+        article_page.evaluate('''() => {
+            // 移除固定定位的浮层
+            const toRemove = [];
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed' || style.position === 'sticky') {
+                    const text = el.innerText || '';
+                    const classes = el.className || '';
+                    // 浮层特征
+                    if ((text.includes('登录') && text.includes('注册')) ||
+                        text.includes('推荐试读') ||
+                        text.includes('仅针对订阅') ||
+                        classes.includes('modal') ||
+                        classes.includes('popup') ||
+                        classes.includes('overlay')) {
+                        toRemove.push(el);
+                    }
+                }
+            });
+            toRemove.forEach(el => el.remove());
+        }''')
+        article_page.wait_for_timeout(2000)
+
+        # 步骤4: 查找并滚动文章内容容器
+        print("查找文章内容容器...")
+
+        # 查找文章内容容器的 JavaScript
+        find_scroll_container_js = '''() => {
+            // 首先尝试查找常见的文章内容容器
+            const selectors = [
+                // 极客时间常见的内容容器
+                '[class*="article"]',
+                '[class*="content"]',
+                '[class*="article-content"]',
+                '[class*="post-content"]',
+                '[id*="article"]',
+                '[id*="content"]',
+                // 通用容器
+                'main',
+                'article',
+                '.main-content'
+            ];
+
+            let contentContainer = null;
+            let maxHeight = 0;
+
+            // 方法1: 查找最大的可滚动容器
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const rect = el.getBoundingClientRect();
+                    const scrollHeight = el.scrollHeight;
+                    // 找一个高度较大且不是侧边栏的容器
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav')) {
+                        maxHeight = scrollHeight;
+                        contentContainer = el;
+                    }
+                }
+            });
+
+            // 方法2: 如果没找到，尝试通过 class 名称查找
+            if (!contentContainer) {
+                for (const selector of selectors) {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        const rect = el.getBoundingClientRect();
+                        const scrollHeight = el.scrollHeight;
+                        if (scrollHeight > 500 && rect.height > 500) {
+                            contentContainer = el;
+                            break;
+                        }
+                    }
+                }
             }
+
+            // 方法3: 查找 body 下直接子元素的最大容器
+            if (!contentContainer) {
+                let maxScrollHeight = 0;
+                document.body.querySelectorAll(':scope > div').forEach(el => {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxScrollHeight && rect.height > 500) {
+                        maxScrollHeight = scrollHeight;
+                        contentContainer = el;
+                    }
+                });
+            }
+
+            if (contentContainer) {
+                return {
+                    found: true,
+                    tagName: contentContainer.tagName,
+                    className: contentContainer.className,
+                    id: contentContainer.id,
+                    scrollHeight: contentContainer.scrollHeight,
+                    clientHeight: contentContainer.clientHeight,
+                    rectHeight: contentContainer.getBoundingClientRect().height
+                };
+            }
+
+            return { found: false };
+        }'''
+
+        container_info = article_page.evaluate(find_scroll_container_js)
+        print(f"  容器信息: {container_info}")
+
+        # 步骤5: 滚动加载所有内容 - 滚动找到的容器
+        print("滚动加载完整内容...")
+
+        scroll_js = '''() => {
+            // 首先尝试查找最大的可滚动容器
+            let scrollContainer = null;
+            let maxHeight = 0;
+
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav') &&
+                        !el.className.includes('list')) {
+                        maxHeight = scrollHeight;
+                        scrollContainer = el;
+                    }
+                }
+            });
+
+            if (!scrollContainer) {
+                // 降级: 使用 window
+                window.scrollTo(0, document.body.scrollHeight);
+                return { method: 'window', scrollHeight: document.body.scrollHeight };
+            }
+
+            // 滚动找到的容器
+            const finalHeight = scrollContainer.scrollHeight;
+            let scrolled = 0;
+            const scrollStep = window.innerHeight;
+
+            while (scrolled < finalHeight) {
+                scrollContainer.scrollTop += scrollStep;
+                scrolled += scrollStep;
+                // 等待一小段时间让内容加载
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(() => {});
+                }
+            }
+
+            // 滚动回顶部
+            scrollContainer.scrollTop = 0;
+
+            return {
+                method: 'container',
+                containerClass: scrollContainer.className,
+                scrollHeight: finalHeight
+            };
+        }'''
+
+        scroll_result = article_page.evaluate(scroll_js)
+        print(f"  滚动结果: {scroll_result}")
+        article_page.wait_for_timeout(2000)
+
+        # 获取最终页面高度
+        final_height = article_page.evaluate("document.documentElement.scrollHeight")
+        print(f"页面总高度: {final_height}px")
+
+        # 滚动回顶部
+        article_page.evaluate("window.scrollTo(0, 0)")
+        article_page.wait_for_timeout(1000)
+
+        # 步骤6: 设置足够大的视口
+        viewport_height = max(final_height, 4000)
+        print(f"设置视口: 1920 x {viewport_height}")
+        article_page.set_viewport_size({"width": 1920, "height": viewport_height})
+        article_page.wait_for_timeout(2000)
+
+        # 步骤7: 展开内容容器到完整高度并获取高度
+        print("展开内容容器到完整高度...")
+
+        # 先滚动到容器底部加载所有内容，同时获取 scrollHeight
+        get_and_expand_js = '''() => {
+            // 找到滚动容器
+            let scrollContainer = null;
+            let maxHeight = 0;
+
+            document.querySelectorAll('div').forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
+                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const scrollHeight = el.scrollHeight;
+                    const rect = el.getBoundingClientRect();
+                    if (scrollHeight > maxHeight && rect.height > 500 &&
+                        !el.className.includes('sidebar') &&
+                        !el.className.includes('catalog') &&
+                        !el.className.includes('menu') &&
+                        !el.className.includes('nav') &&
+                        !el.className.includes('list')) {
+                        maxHeight = scrollHeight;
+                        scrollContainer = el;
+                    }
+                }
+            });
+
+            if (!scrollContainer) {
+                return { expanded: false, error: 'No container found' };
+            }
+
+            // 记录当前 scrollHeight
+            const originalScrollHeight = scrollContainer.scrollHeight;
+
+            // 滚动到最底部加载所有内容
+            scrollContainer.scrollTop = originalScrollHeight;
+            // 等待一下让内容加载
+            const loadedScrollHeight = scrollContainer.scrollHeight;
+
+            // 滚动回顶部
+            scrollContainer.scrollTop = 0;
+
+            // 展开容器 - 直接设置很大的高度
+            scrollContainer.style.maxHeight = 'none';
+            scrollContainer.style.height = (loadedScrollHeight + 500) + 'px';
+            scrollContainer.style.overflow = 'visible';
+
+            // 禁用 simplebar
+            const parent = scrollContainer.parentElement;
+            if (parent && (parent.className.includes('simplebar') || parent.className.includes('SimpleBar'))) {
+                parent.style.maxHeight = 'none';
+                parent.style.height = (loadedScrollHeight + 500) + 'px';
+                parent.style.overflow = 'visible';
+                // 尝试禁用 simplebar 的滚动功能
+                const simplebarEl = parent.querySelector('.simplebar-scrollbar');
+                if (simplebarEl) {
+                    simplebarEl.style.display = 'none';
+                }
+            }
+
+            return {
+                expanded: true,
+                originalScrollHeight: originalScrollHeight,
+                loadedScrollHeight: loadedScrollHeight,
+                className: scrollContainer.className
+            };
+        }'''
+
+        expand_result = article_page.evaluate(get_and_expand_js)
+        print(f"  展开结果: {expand_result}")
+        article_page.wait_for_timeout(2000)
+
+        # 步骤8: 生成 PDF - 使用 height 参数指定页面高度
+        content_height = expand_result.get('loadedScrollHeight', 25000)
+        print(f"正在生成 PDF (内容高度: {content_height}px)...")
+        article_page.pdf(
+            path=str(output_path),
+            width="1920px",
+            height=f"{content_height}px",
+            print_background=True,
+            margin={"top": "0", "bottom": "0", "left": "0", "right": "0"}
         )
 
-        # Get title from generated PDF or use the filename
-        print(f"PDF saved successfully: {output_path}")
-        return 0
+        # 关闭文章页面
+        article_page.close()
 
-    except URLInvalidError as e:
-        print(f"Invalid URL: {e}")
-        return 1
-    except FetchError as e:
-        print(f"Failed to fetch page: {e}")
-        return 1
-    except ConversionError as e:
-        print(f"Failed to convert to PDF: {e}")
-        return 1
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return 1
-    finally:
-        # Cleanup temp files
-        if "temp_html" in locals():
-            cleanup_temp_files(temp_html)
+        # 保持登录页面打开以便后续使用（或可以关闭）
+        # browser.close()  # 不关闭浏览器，让用户可以继续操作
 
-
-def set_default_directory(args):
-    """Set default output directory.
-
-    Args:
-        args: Parsed arguments
-
-    Returns:
-        int: Exit code
-    """
-    if not args.set_default_dir:
-        return 0
-
-    output_dir = Path(args.set_default_dir)
-    if not output_dir.is_dir():
-        print(f"Error: Directory does not exist: {output_dir}")
-        return 1
-
-    set_default_output_dir(str(output_dir))
-    print(f"Default output directory set to: {output_dir}")
+    print(f"\nPDF 已保存: {output_path}")
     return 0
+
+
+def save_page(args):
+    """Save a page as PDF using saved cookie."""
+    cookie = None
+
+    if args.cookie:
+        cookie = args.cookie
+    elif args.use_config or args.use_chrome:
+        cookie = get_cookie()
+        if not cookie:
+            print("错误: 没有保存的 Cookie，请先登录")
+            return 1
+    else:
+        cookie = get_cookie()
+
+    if not cookie:
+        print("错误: 没有可用的 Cookie")
+        return 1
+
+    if not args.url:
+        print("错误: URL 是必需的")
+        return 1
+
+    output_dir = args.output or get_default_output_dir()
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_name = args.name or "geekbang_article"
+    output_path = output_dir / f"{output_name}.pdf"
+
+    try:
+        print(f"正在生成 PDF: {output_path}")
+        convert_with_cookie(args.url, cookie, output_path, options={
+            "page_size": args.page_size,
+            "landscape": args.landscape
+        })
+        print(f"PDF 保存成功: {output_path}")
+        return 0
+    except Exception as e:
+        print(f"生成 PDF 失败: {e}")
+        return 1
 
 
 def main():
     """Main entry point."""
     args = parse_args()
 
-    # Handle login
     if args.login:
         return handle_login(args)
 
-    # Handle set default directory
-    exit_code = set_default_directory(args)
     if args.set_default_dir:
-        return exit_code
+        output_dir = Path(args.set_default_dir)
+        if not output_dir.is_dir():
+            print(f"错误: 目录不存在: {output_dir}")
+            return 1
+        set_default_output_dir(str(output_dir))
+        print(f"默认输出目录已设置为: {output_dir}")
+        return 0
 
-    # If no URL provided, show help
+    if args.browser_login:
+        return browser_login_and_save(args)
+
     if not args.url:
-        print("Error: URL is required. Use --help for usage information.")
+        print("错误: URL 是必需的")
+        print("\n使用 --browser-login 模式:")
+        print("  python main.py <url> --browser-login")
         return 1
 
-    # Save page as PDF
     return save_page(args)
 
 
