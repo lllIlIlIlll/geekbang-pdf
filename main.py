@@ -222,27 +222,71 @@ def browser_login_and_save(args):
         }''')
         article_page.wait_for_timeout(1000)
 
-        # 步骤3.5: 隐藏左侧导航栏
-        print("隐藏左侧导航栏...")
+        # 步骤3.5: 隐藏左侧导航栏并扩展内容区域
+        print("隐藏左侧导航栏并扩展内容区域...")
         hide_nav_js = '''() => {
             let hiddenCount = 0;
 
-            // 只隐藏明确是侧边栏的顶级容器，不破坏子元素
-            // 精确匹配 Index_side 开头的 class
-            document.querySelectorAll('[class^="Index_side"]').forEach(el => {
-                if (el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE') {
+            // 1. 隐藏左侧导航栏
+            document.querySelectorAll('[class*="Index_side"]').forEach(el => {
+                el.style.display = 'none';
+                hiddenCount++;
+            });
+
+            // 2. 隐藏右侧固定元素（如有）
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                const classes = el.className || '';
+                // 隐藏右侧固定定位的元素
+                if (style.position === 'fixed' && rect.left > 1000 && rect.width < 400) {
                     el.style.display = 'none';
                     hiddenCount++;
                 }
             });
 
-            // 隐藏课程目录列表容器
-            document.querySelectorAll('[class^="Catalog_articleList"]').forEach(el => {
-                el.style.display = 'none';
-                hiddenCount++;
-            });
+            // 3. 找到并扩展主内容区域
+            const contentSelectors = [
+                '[class*="Index_contentWrap"]',
+                '[class*="contentWrap"]',
+                '[class*="article-container"]',
+                'article',
+                'main'
+            ];
 
-            return { hiddenCount };
+            let contentEl = null;
+            for (const sel of contentSelectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    // 找大的内容容器
+                    if (rect.width > 500 && rect.height > 300) {
+                        contentEl = el;
+                        break;
+                    }
+                }
+            }
+
+            if (contentEl) {
+                // 扩展内容区域到全屏
+                contentEl.style.position = 'absolute';
+                contentEl.style.left = '0';
+                contentEl.style.top = '0';
+                contentEl.style.width = '100%';
+                contentEl.style.maxWidth = 'none';
+                contentEl.style.height = '100%';
+                contentEl.style.zIndex = '100';
+
+                // 找到内部滚动容器并扩展
+                const scrollContainer = contentEl.querySelector('[class*="contentWrapper"], [class*="scroller"], .simplebar-content-wrapper');
+                if (scrollContainer) {
+                    scrollContainer.style.position = 'absolute';
+                    scrollContainer.style.left = '0';
+                    scrollContainer.style.width = '100%';
+                }
+            }
+
+            return { hiddenCount, contentEl: contentEl ? contentEl.className : null };
         }'''
 
         hide_result = article_page.evaluate(hide_nav_js)
@@ -420,10 +464,56 @@ def browser_login_and_save(args):
         article_page.wait_for_timeout(1000)
 
         # 步骤6: 设置足够大的视口
+        viewport_width = 1920
         viewport_height = max(final_height, 4000)
-        print(f"设置视口: 1920 x {viewport_height}")
-        article_page.set_viewport_size({"width": 1920, "height": viewport_height})
+        print(f"设置视口: {viewport_width} x {viewport_height}")
+        article_page.set_viewport_size({"width": viewport_width, "height": viewport_height})
         article_page.wait_for_timeout(2000)
+
+        # 步骤6.5: 再次确保内容区域扩展到全屏
+        print("确保内容区域全屏显示...")
+        expand_content_js = '''() => {
+            // 找到 Index_contentWrap 并扩展
+            const contentEl = document.querySelector('[class*="Index_contentWrap"]');
+            if (contentEl) {
+                contentEl.style.position = 'absolute';
+                contentEl.style.left = '0';
+                contentEl.style.top = '0';
+                contentEl.style.width = '1920px';
+                contentEl.style.height = '100%';
+                contentEl.style.maxWidth = 'none';
+                contentEl.style.zIndex = '100';
+
+                // 找到内部滚动容器并扩展
+                const scrollContainer = contentEl.querySelector('[class*="scroller"], .simplebar-content-wrapper');
+                if (scrollContainer) {
+                    scrollContainer.style.position = 'absolute';
+                    scrollContainer.style.left = '0';
+                    scrollContainer.style.width = '1920px';
+                    scrollContainer.style.maxHeight = 'none';
+                    scrollContainer.style.height = 'auto';
+                    scrollContainer.style.overflow = 'visible';
+                }
+
+                return { expanded: true, width: 1920 };
+            }
+
+            // 备选：直接扩展 body 下的直接子元素
+            document.body.querySelectorAll(':scope > div').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.left < 100 && rect.width < 1000) {
+                    el.style.position = 'absolute';
+                    el.style.left = '0';
+                    el.style.width = '1920px';
+                }
+            });
+
+            return { expanded: false };
+        }'''
+
+        expand_content_result = article_page.evaluate(expand_content_js)
+        print(f"  内容区域扩展结果: {expand_content_result}")
+        article_page.wait_for_timeout(1000)
 
         # 步骤7: 展开内容容器到完整高度并获取高度
         print("展开内容容器到完整高度...")
@@ -497,17 +587,18 @@ def browser_login_and_save(args):
         print(f"  展开结果: {expand_result}")
         article_page.wait_for_timeout(2000)
 
-        # 步骤8: 生成 PDF - 使用 A3 页面尺寸
+        # 步骤8: 生成 PDF - 使用 A3 页面尺寸和扩展的内容宽度
         content_height = expand_result.get('loadedScrollHeight', 25000)
-        print(f"正在生成 PDF (A3版面, 内容高度: {content_height}px)...")
-        # A3: 297mm x 420mm = 1122px x 1587px (按 96dpi)
-        # 转换为 PDF 点数: 1mm = 2.8346 点, 所以 297mm = 842pt, 420mm = 1190pt
-        a3_width = "297mm"
-        a3_height = "420mm"
+        # 使用 1920px 宽度（与视口一致）
+        pdf_width = 1920
+        print(f"正在生成 PDF (A3版面, 宽度: {pdf_width}px, 内容高度: {content_height}px)...")
+        # A3: 297mm x 420mm
+        # 使用 px 作为单位，1920px 约等于 508mm（超过 A3 宽度）
+        # Playwright PDF 使用 mm 或直接 px
         article_page.pdf(
             path=str(output_path),
-            width=a3_width,
-            height=a3_height,
+            width=f"{pdf_width}px",
+            height=f"{content_height}px",
             print_background=True,
             margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
         )
