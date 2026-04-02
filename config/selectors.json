@@ -18,22 +18,11 @@
       "[class*=\"sidebar\"]",
       "[class*=\"catalog\"]"
     ],
-    "fixed_elements": [
-      "[class*=\"modal\"]",
-      "[class*=\"popup\"]",
-      "[class*=\"overlay\"]",
-      "[class*=\"login-prompt\"]"
-    ],
-    "login_button": [
-      "[class*=\"login\"]",
-      "[class*=\"signin\"]"
-    ],
-    "user_info": [
-      ".user-info",
-      ".user-name",
-      ".avatar",
-      "[class*=\"loginSuccess\"]"
-    ]
+    "fixed_elements": {
+      "classnames": ["modal", "popup", "overlay", "login-prompt"],
+      "texts": ["登录", "注册", "推荐试读", "仅针对订阅"]
+    },
+    "exclude_classes": ["sidebar", "catalog", "menu", "nav", "list"]
   },
   "default": {
     "article_content": [
@@ -45,6 +34,12 @@
     "scroll_container": [
       "[class*=\"content\"]",
       "[class*=\"article\"]"
-    ]
+    ],
+    "sidebar": [],
+    "fixed_elements": {
+      "classnames": ["modal", "popup", "overlay"],
+      "texts": ["登录", "注册"]
+    },
+    "exclude_classes": ["sidebar", "catalog", "menu", "nav", "list"]
   }
 }

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .exceptions import ConversionError
 from ..utils.constants import ConversionConstants, ViewportConstants
+from ..utils.selectors import load_selectors, get_platform_from_url
 
 
 def convert_with_context(url, context, output_path, options=None):
@@ -34,6 +35,29 @@ def convert_with_context(url, context, output_path, options=None):
     page_size = options.get("page_size", "A4")
     landscape = options.get("landscape", False)
 
+    # Load platform-specific selectors
+    platform = get_platform_from_url(url)
+    selectors = load_selectors(platform)
+
+    # Build selectors config for JavaScript injection
+    fixed_elements = selectors.get("fixed_elements", {})
+    if isinstance(fixed_elements, dict):
+        fixed_classnames = fixed_elements.get("classnames", [])
+        fixed_texts = fixed_elements.get("texts", [])
+    else:
+        fixed_classnames = fixed_elements if isinstance(fixed_elements, list) else []
+        fixed_texts = []
+
+    selectors_config = {
+        "sidebar": selectors.get("sidebar", []),
+        "article_content": selectors.get("article_content", []),
+        "scroll_container": selectors.get("scroll_container", []),
+        "fixed_classnames": fixed_classnames,
+        "fixed_texts": fixed_texts,
+        "exclude_classes": selectors.get("exclude_classes", ["sidebar", "catalog", "menu", "nav", "list"])
+    }
+    selectors_json = json.dumps(selectors_config)
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -53,71 +77,69 @@ def convert_with_context(url, context, output_path, options=None):
 
         # Remove floating layers
         print("  移除页面浮层...")
-        page.evaluate('''() => {
+        page.evaluate(f'''((selectors) => {{
             const toRemove = [];
-            document.querySelectorAll('*').forEach(el => {
+            const fixedClassnames = selectors.fixed_classnames || [];
+            const fixedTexts = selectors.fixed_texts || [];
+            document.querySelectorAll('*').forEach(el => {{
                 const style = window.getComputedStyle(el);
-                if (style.position === 'fixed' || style.position === 'sticky') {
+                if (style.position === 'fixed' || style.position === 'sticky') {{
                     const text = el.innerText || '';
                     const classes = el.className || '';
-                    if ((text.includes('登录') && text.includes('注册')) ||
-                        text.includes('推荐试读') ||
-                        text.includes('仅针对订阅') ||
-                        classes.includes('modal') ||
-                        classes.includes('popup') ||
-                        classes.includes('overlay')) {
+                    let shouldRemove = fixedTexts.some(t => text.includes(t));
+                    if (!shouldRemove && fixedClassnames.length > 0) {{
+                        shouldRemove = fixedClassnames.some(c => classes.includes(c));
+                    }}
+                    if (shouldRemove) {{
                         toRemove.push(el);
-                    }
-                }
-            });
+                    }}
+                }}
+            }});
             toRemove.forEach(el => el.remove());
-        }''')
+        }})(''' + selectors_json + ''')''')
         page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Hide left sidebar and expand content area
         print("  隐藏左侧导航栏并扩展内容区域...")
-        page.evaluate('''() => {
+        page.evaluate(f'''((selectors) => {{
             let hiddenCount = 0;
+            const sidebarSelectors = selectors.sidebar || [];
+            const articleContentSelectors = selectors.article_content || [];
+            const scrollContainerSelectors = selectors.scroll_container || [];
 
             // 1. Hide left sidebar
-            document.querySelectorAll('[class*="Index_side"]').forEach(el => {
-                el.style.display = 'none';
-                hiddenCount++;
-            });
+            sidebarSelectors.forEach(sel => {{
+                document.querySelectorAll(sel).forEach(el => {{
+                    el.style.display = 'none';
+                    hiddenCount++;
+                }});
+            }});
 
             // 2. Hide right fixed elements
-            document.querySelectorAll('*').forEach(el => {
+            document.querySelectorAll('*').forEach(el => {{
                 const style = window.getComputedStyle(el);
                 const rect = el.getBoundingClientRect();
                 const classes = el.className || '';
-                if (style.position === 'fixed' && rect.left > 1000 && rect.width < 400) {
+                if (style.position === 'fixed' && rect.left > 1000 && rect.width < 400) {{
                     el.style.display = 'none';
                     hiddenCount++;
-                }
-            });
+                }}
+            }});
 
             // 3. Find and expand main content area
-            const contentSelectors = [
-                '[class*="Index_contentWrap"]',
-                '[class*="contentWrap"]',
-                '[class*="article-container"]',
-                'article',
-                'main'
-            ];
-
             let contentEl = null;
-            for (const sel of contentSelectors) {
+            for (const sel of articleContentSelectors) {{
                 const el = document.querySelector(sel);
-                if (el) {
+                if (el) {{
                     const rect = el.getBoundingClientRect();
-                    if (rect.width > 500 && rect.height > 300) {
+                    if (rect.width > 500 && rect.height > 300) {{
                         contentEl = el;
                         break;
-                    }
-                }
-            }
+                    }}
+                }}
+            }}
 
-            if (contentEl) {
+            if (contentEl) {{
                 contentEl.style.position = 'absolute';
                 contentEl.style.left = '0';
                 contentEl.style.top = '0';
@@ -126,16 +148,20 @@ def convert_with_context(url, context, output_path, options=None):
                 contentEl.style.height = '100%';
                 contentEl.style.zIndex = '100';
 
-                const scrollContainer = contentEl.querySelector('[class*="contentWrapper"], [class*="scroller"], .simplebar-content-wrapper');
-                if (scrollContainer) {
+                let scrollContainer = null;
+                for (const sel of scrollContainerSelectors) {{
+                    scrollContainer = contentEl.querySelector(sel);
+                    if (scrollContainer) break;
+                }}
+                if (scrollContainer) {{
                     scrollContainer.style.position = 'absolute';
                     scrollContainer.style.left = '0';
                     scrollContainer.style.width = '100%';
-                }
-            }
+                }}
+            }}
 
-            return { hiddenCount, contentEl: contentEl ? contentEl.className : null };
-        }''')
+            return {{ hiddenCount, contentEl: contentEl ? contentEl.className : null }};
+        }})(''' + selectors_json + ''')''')
         page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Get page title for filename
@@ -152,67 +178,56 @@ def convert_with_context(url, context, output_path, options=None):
 
         # Find and scroll content container
         print("  查找文章内容容器...")
-        container_info = page.evaluate('''() => {
-            const selectors = [
-                '[class*="article"]',
-                '[class*="content"]',
-                '[class*="article-content"]',
-                '[class*="post-content"]',
-                '[id*="article"]',
-                '[id*="content"]',
-                'main',
-                'article',
-                '.main-content'
-            ];
+        container_info = page.evaluate(f'''((selectors) => {{
+            const articleContentSelectors = selectors.article_content || [];
+            const excludeClasses = selectors.exclude_classes || [];
 
             let contentContainer = null;
             let maxHeight = 0;
 
-            document.querySelectorAll('div').forEach(el => {
+            document.querySelectorAll('div').forEach(el => {{
                 const style = window.getComputedStyle(el);
                 if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
-                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    style.overflow === 'auto' || style.overflow === 'scroll') {{
                     const rect = el.getBoundingClientRect();
                     const scrollHeight = el.scrollHeight;
-                    if (scrollHeight > maxHeight && rect.height > 500 &&
-                        !el.className.includes('sidebar') &&
-                        !el.className.includes('catalog') &&
-                        !el.className.includes('menu') &&
-                        !el.className.includes('nav')) {
+                    const className = el.className || '';
+                    const shouldExclude = excludeClasses.some(c => className.includes(c));
+                    if (scrollHeight > maxHeight && rect.height > 500 && !shouldExclude) {{
                         maxHeight = scrollHeight;
                         contentContainer = el;
-                    }
-                }
-            });
+                    }}
+                }}
+            }});
 
-            if (!contentContainer) {
-                for (const selector of selectors) {
+            if (!contentContainer) {{
+                for (const selector of articleContentSelectors) {{
                     const el = document.querySelector(selector);
-                    if (el) {
+                    if (el) {{
                         const rect = el.getBoundingClientRect();
                         const scrollHeight = el.scrollHeight;
-                        if (scrollHeight > 500 && rect.height > 500) {
+                        if (scrollHeight > 500 && rect.height > 500) {{
                             contentContainer = el;
                             break;
-                        }
-                    }
-                }
-            }
+                        }}
+                    }}
+                }}
+            }}
 
-            if (!contentContainer) {
+            if (!contentContainer) {{
                 let maxScrollHeight = 0;
-                document.body.querySelectorAll(':scope > div').forEach(el => {
+                document.body.querySelectorAll(':scope > div').forEach(el => {{
                     const scrollHeight = el.scrollHeight;
                     const rect = el.getBoundingClientRect();
-                    if (scrollHeight > maxScrollHeight && rect.height > 500) {
+                    if (scrollHeight > maxScrollHeight && rect.height > 500) {{
                         maxScrollHeight = scrollHeight;
                         contentContainer = el;
-                    }
-                });
-            }
+                    }}
+                }});
+            }}
 
-            if (contentContainer) {
-                return {
+            if (contentContainer) {{
+                return {{
                     found: true,
                     tagName: contentContainer.tagName,
                     className: contentContainer.className,
@@ -220,62 +235,60 @@ def convert_with_context(url, context, output_path, options=None):
                     scrollHeight: contentContainer.scrollHeight,
                     clientHeight: contentContainer.clientHeight,
                     rectHeight: contentContainer.getBoundingClientRect().height
-                };
-            }
+                }};
+            }}
 
-            return { found: false };
-        }''')
+            return {{ found: false }};
+        }})(''' + selectors_json + ''')''')
         print(f"  容器信息: {container_info}")
 
         # Scroll to load all content
         print("  滚动加载完整内容...")
-        scroll_result = page.evaluate('''() => {
+        scroll_result = page.evaluate(f'''((selectors) => {{
+            const excludeClasses = selectors.exclude_classes || [];
             let scrollContainer = null;
             let maxHeight = 0;
 
-            document.querySelectorAll('div').forEach(el => {
+            document.querySelectorAll('div').forEach(el => {{
                 const style = window.getComputedStyle(el);
                 if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
-                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    style.overflow === 'auto' || style.overflow === 'scroll') {{
                     const scrollHeight = el.scrollHeight;
                     const rect = el.getBoundingClientRect();
-                    if (scrollHeight > maxHeight && rect.height > 500 &&
-                        !el.className.includes('sidebar') &&
-                        !el.className.includes('catalog') &&
-                        !el.className.includes('menu') &&
-                        !el.className.includes('nav') &&
-                        !el.className.includes('list')) {
+                    const className = el.className || '';
+                    const shouldExclude = excludeClasses.some(c => className.includes(c));
+                    if (scrollHeight > maxHeight && rect.height > 500 && !shouldExclude) {{
                         maxHeight = scrollHeight;
                         scrollContainer = el;
-                    }
-                }
-            });
+                    }}
+                }}
+            }});
 
-            if (!scrollContainer) {
+            if (!scrollContainer) {{
                 window.scrollTo(0, document.body.scrollHeight);
-                return { method: 'window', scrollHeight: document.body.scrollHeight };
-            }
+                return {{ method: 'window', scrollHeight: document.body.scrollHeight }};
+            }}
 
             const finalHeight = scrollContainer.scrollHeight;
             let scrolled = 0;
             const scrollStep = window.innerHeight;
 
-            while (scrolled < finalHeight) {
+            while (scrolled < finalHeight) {{
                 scrollContainer.scrollTop += scrollStep;
                 scrolled += scrollStep;
-                if (typeof requestAnimationFrame === 'function') {
-                    requestAnimationFrame(() => {});
-                }
-            }
+                if (typeof requestAnimationFrame === 'function') {{
+                    requestAnimationFrame(() => {{}});
+                }}
+            }}
 
             scrollContainer.scrollTop = 0;
 
-            return {
+            return {{
                 method: 'container',
                 containerClass: scrollContainer.className,
                 scrollHeight: finalHeight
-            };
-        }''')
+            }};
+        }})(''' + selectors_json + ''')''')
         print(f"  滚动结果: {scroll_result}")
         page.wait_for_timeout(ConversionConstants.MEDIUM_WAIT_MS)
 
@@ -296,9 +309,17 @@ def convert_with_context(url, context, output_path, options=None):
 
         # Ensure content area is expanded to full screen
         print("  确保内容区域全屏显示...")
-        page.evaluate('''() => {
-            const contentEl = document.querySelector('[class*="Index_contentWrap"]');
-            if (contentEl) {
+        page.evaluate(f'''((selectors) => {{
+            const articleContentSelectors = selectors.article_content || [];
+            const scrollContainerSelectors = selectors.scroll_container || [];
+
+            let contentEl = null;
+            for (const sel of articleContentSelectors) {{
+                contentEl = document.querySelector(sel);
+                if (contentEl) break;
+            }}
+
+            if (contentEl) {{
                 contentEl.style.position = 'absolute';
                 contentEl.style.left = '0';
                 contentEl.style.top = '0';
@@ -307,59 +328,61 @@ def convert_with_context(url, context, output_path, options=None):
                 contentEl.style.maxWidth = 'none';
                 contentEl.style.zIndex = '100';
 
-                const scrollContainer = contentEl.querySelector('[class*="scroller"], .simplebar-content-wrapper');
-                if (scrollContainer) {
+                let scrollContainer = null;
+                for (const sel of scrollContainerSelectors) {{
+                    scrollContainer = contentEl.querySelector(sel);
+                    if (scrollContainer) break;
+                }}
+                if (scrollContainer) {{
                     scrollContainer.style.position = 'absolute';
                     scrollContainer.style.left = '0';
                     scrollContainer.style.width = '1920px';
                     scrollContainer.style.maxHeight = 'none';
                     scrollContainer.style.height = 'auto';
                     scrollContainer.style.overflow = 'visible';
-                }
+                }}
 
-                return { expanded: true, width: 1920 };
-            }
+                return {{ expanded: true, width: 1920 }};
+            }}
 
-            document.body.querySelectorAll(':scope > div').forEach(el => {
+            document.body.querySelectorAll(':scope > div').forEach(el => {{
                 const rect = el.getBoundingClientRect();
-                if (rect.left < 100 && rect.width < 1000) {
+                if (rect.left < 100 && rect.width < 1000) {{
                     el.style.position = 'absolute';
                     el.style.left = '0';
                     el.style.width = '1920px';
-                }
-            });
+                }}
+            }});
 
-            return { expanded: false };
-        }''')
+            return {{ expanded: false }};
+        }})(''' + selectors_json + ''')''')
         page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Expand content container to full height
         print("  展开内容容器到完整高度...")
-        expand_result = page.evaluate('''() => {
+        expand_result = page.evaluate(f'''((selectors) => {{
+            const excludeClasses = selectors.exclude_classes || [];
             let scrollContainer = null;
             let maxHeight = 0;
 
-            document.querySelectorAll('div').forEach(el => {
+            document.querySelectorAll('div').forEach(el => {{
                 const style = window.getComputedStyle(el);
                 if (style.overflowY === 'auto' || style.overflowY === 'scroll' ||
-                    style.overflow === 'auto' || style.overflow === 'scroll') {
+                    style.overflow === 'auto' || style.overflow === 'scroll') {{
                     const scrollHeight = el.scrollHeight;
                     const rect = el.getBoundingClientRect();
-                    if (scrollHeight > maxHeight && rect.height > 500 &&
-                        !el.className.includes('sidebar') &&
-                        !el.className.includes('catalog') &&
-                        !el.className.includes('menu') &&
-                        !el.className.includes('nav') &&
-                        !el.className.includes('list')) {
+                    const className = el.className || '';
+                    const shouldExclude = excludeClasses.some(c => className.includes(c));
+                    if (scrollHeight > maxHeight && rect.height > 500 && !shouldExclude) {{
                         maxHeight = scrollHeight;
                         scrollContainer = el;
-                    }
-                }
-            });
+                    }}
+                }}
+            }});
 
-            if (!scrollContainer) {
-                return { expanded: false, error: 'No container found' };
-            }
+            if (!scrollContainer) {{
+                return {{ expanded: false, error: 'No container found' }};
+            }}
 
             const originalScrollHeight = scrollContainer.scrollHeight;
             scrollContainer.scrollTop = originalScrollHeight;
@@ -371,23 +394,23 @@ def convert_with_context(url, context, output_path, options=None):
             scrollContainer.style.overflow = 'visible';
 
             const parent = scrollContainer.parentElement;
-            if (parent && (parent.className.includes('simplebar') || parent.className.includes('SimpleBar'))) {
+            if (parent && (parent.className.includes('simplebar') || parent.className.includes('SimpleBar'))) {{
                 parent.style.maxHeight = 'none';
                 parent.style.height = (loadedScrollHeight + 500) + 'px';
                 parent.style.overflow = 'visible';
                 const simplebarEl = parent.querySelector('.simplebar-scrollbar');
-                if (simplebarEl) {
+                if (simplebarEl) {{
                     simplebarEl.style.display = 'none';
-                }
-            }
+                }}
+            }}
 
-            return {
+            return {{
                 expanded: true,
                 originalScrollHeight: originalScrollHeight,
                 loadedScrollHeight: loadedScrollHeight,
                 className: scrollContainer.className
-            };
-        }''')
+            }};
+        }})(''' + selectors_json + ''')''')
         print(f"  展开结果: {expand_result}")
         page.wait_for_timeout(ConversionConstants.MEDIUM_WAIT_MS)
 

@@ -342,25 +342,50 @@ def save_page(args):
 
     print(f"\n待处理的 URL 数量: {len(urls)}")
 
+    # Parse cookie string into Playwright format
+    cookies = []
+    for part in cookie.split(";"):
+        part = part.strip()
+        if "=" in part:
+            name, value = part.split("=", 1)
+            cookies.append({
+                "name": name.strip(),
+                "value": value.strip(),
+                "domain": ".geekbang.org",
+                "path": "/"
+            })
+
     successful_urls = []
     failed_urls = []
 
-    for i, url in enumerate(urls, 1):
-        print(f"\n[{i}/{len(urls)}] 正在处理: {url}")
+    # Use convert_with_context with a shared browser context
+    p = sync_playwright().start()
+    browser = p.chromium.launch(headless=True)
 
-        output_name = None
-        if args.name and len(urls) == 1:
-            output_name = args.name
+    try:
+        context = browser.new_context()
+        context.add_cookies(cookies)
 
-        output_path = output_dir / f"{output_name or 'geekbang_article'}.pdf"
+        for i, url in enumerate(urls, 1):
+            print(f"\n[{i}/{len(urls)}] 正在处理: {url}")
 
-        try:
-            convert_with_cookie(url, cookie, output_path, options=pdf_options)
-            print(f"  PDF 保存成功: {output_path}")
-            successful_urls.append(url)
-        except Exception as e:
-            print(f"  处理失败: {e}")
-            failed_urls.append(url)
+            output_name = None
+            if args.name and len(urls) == 1:
+                output_name = args.name
+
+            output_path = output_dir / f"{output_name or 'geekbang_article'}.pdf"
+
+            try:
+                convert_with_context(url, context, output_path, options=pdf_options)
+                print(f"  PDF 保存成功: {output_path}")
+                successful_urls.append(url)
+            except Exception as e:
+                print(f"  处理失败: {e}")
+                failed_urls.append(url)
+
+    finally:
+        browser.close()
+        p.stop()
 
     # Print summary
     print("\n" + "="*50)
