@@ -10,12 +10,13 @@
 - **隐藏界面元素** - 自动隐藏左侧导航栏、浮层等非内容元素
 - **Cookie 自动保存** - 登录成功后自动保存 Cookie，下次无需重复登录
 - **多页面格式支持** - 支持 A4、Letter、Legal 等多种页面尺寸
+- **配置化平台支持** - CSS 选择器从 `selectors.json` 读取，支持多平台扩展
 
 ## 安装
 
 ```bash
 # 克隆项目
-git clone <repository-url>
+git clone https://github.com/lllIlIlIlll/geekbang-pdf.git
 cd geekbang-pdf
 
 # 安装 Python 依赖
@@ -75,13 +76,38 @@ geekbang-pdf/
 ├── main.py              # CLI 入口点
 ├── src/
 │   ├── __init__.py      # 导出公共接口和异常类
-│   ├── auth.py          # Selenium 登录 / Chrome 会话
-│   ├── fetcher.py       # HTTP 页面获取
-│   ├── parser.py        # HTML 解析（用于静态页面）
-│   ├── converter.py     # Playwright PDF 生成
-│   └── exceptions.py    # 自定义异常
+│   ├── core/            # 核心模块
+│   │   ├── __init__.py
+│   │   ├── auth.py      # Selenium 登录 / Chrome 会话
+│   │   ├── fetcher.py   # HTTP 页面获取
+│   │   ├── parser.py    # HTML 解析（用于静态页面）
+│   │   ├── converter.py # Playwright PDF 生成
+│   │   └── exceptions.py # 自定义异常
+│   ├── cli/             # CLI 模块
+│   │   ├── __init__.py
+│   │   ├── commands.py  # Click 命令定义
+│   │   └── formatters.py # rich 输出格式化
+│   ├── models/          # 数据模型
+│   │   ├── __init__.py
+│   │   ├── config.py    # PDFConfig dataclass
+│   │   └── pdf_options.py # PDFOptions dataclass
+│   └── utils/           # 工具模块
+│       ├── __init__.py
+│       ├── constants.py
+│       ├── javascript.py
+│       ├── logging_config.py
+│       ├── selectors.py    # 平台选择器加载
+│       └── waits.py
 ├── config/
-│   └── config.py        # 配置文件管理（~/.geekbang-pdf/）
+│   ├── __init__.py
+│   ├── config.py        # 配置文件管理（~/.geekbang-pdf/）
+│   └── selectors.json   # 网站选择器配置
+├── tests/
+│   ├── unit/            # 单元测试
+│   ├── integration/      # 集成测试
+│   └── fixtures/        # 测试固件
+├── docs/                # 文档目录
+├── out/                 # PDF 输出目录
 ├── requirements.txt     # Python 依赖
 └── package.json         # Node.js 依赖（Playwright）
 ```

@@ -46,7 +46,9 @@ GeekBang PDF Saver 是一个基于浏览器自动化的 CLI 工具，通过 Play
 | `src/core/fetcher.py` | HTTP 页面获取（备用） | requests |
 | `src/core/parser.py` | HTML 解析，资源处理（备用） | BeautifulSoup |
 | `src/core/exceptions.py` | 异常定义 | - |
+| `src/utils/selectors.py` | 平台选择器加载与配置化 | - |
 | `config/config.py` | 配置文件读写，Cookie 加密存储 | cryptography |
+| `config/selectors.json` | 网站选择器配置 | - |
 | `src/models/` | 数据模型定义 | dataclasses |
 
 ### 1.4 数据流
@@ -634,7 +636,82 @@ document.querySelectorAll('div').forEach(el => {
 
 ---
 
-## 8. CLI 设计
+## 8. 平台选择器框架
+
+### 8.1 设计目标
+
+将 CSS 选择器配置化，实现"换平台只需换配置"的核心价值。无需修改代码，即可支持不同平台（极客时间、得到、知乎等）。
+
+### 8.2 选择器配置结构 (config/selectors.json)
+
+```json
+{
+  "geekbang": {
+    "article_content": ["[class*=\"article-content\"]", "[class*=\"contentWrap\"]", "article", "main"],
+    "scroll_container": ["[class*=\"contentWrapper\"]", ".simplebar-content-wrapper"],
+    "sidebar": ["[class*=\"Index_side\"]", "[class*=\"sidebar\"]"],
+    "fixed_elements": {
+      "classnames": ["modal", "popup", "overlay", "login-prompt"],
+      "texts": ["登录", "注册", "推荐试读", "仅针对订阅"]
+    },
+    "exclude_classes": ["sidebar", "catalog", "menu", "nav", "list"]
+  },
+  "default": {
+    "article_content": ["article", "main", ".content"],
+    "scroll_container": ["[class*=\"content\"]"],
+    "sidebar": [],
+    "fixed_elements": {
+      "classnames": ["modal", "popup", "overlay"],
+      "texts": ["登录", "注册"]
+    },
+    "exclude_classes": ["sidebar", "catalog", "menu", "nav"]
+  }
+}
+```
+
+### 8.3 选择器加载模块 (src/utils/selectors.py)
+
+```python
+def load_selectors(platform: str = "geekbang") -> Dict:
+    """加载指定平台的选择器配置"""
+
+def get_platform_from_url(url: str) -> str:
+    """从 URL 推断平台 (geekbang/dedao/zhihu/default)"""
+```
+
+### 8.4 JavaScript 注入机制
+
+选择器通过 `page.evaluate()` 注入到 JavaScript 中：
+
+```python
+selectors_config = {
+    "sidebar": selectors.get("sidebar", []),
+    "article_content": selectors.get("article_content", []),
+    "scroll_container": selectors.get("scroll_container", []),
+    "fixed_classnames": fixed_classnames,
+    "fixed_texts": fixed_texts,
+    "exclude_classes": selectors.get("exclude_classes", [])
+}
+selectors_json = json.dumps(selectors_config)
+
+page.evaluate(f'''((selectors) => {{
+    // 使用注入的选择器
+    selectors.sidebar.forEach(sel => {{ ... }});
+}}(''' + selectors_json + ''')''')
+```
+
+### 8.5 支持的平台
+
+| 平台 | URL 特征 | 状态 |
+|------|----------|------|
+| geekbang | `time.geekbang.org` | ✅ 已实现 |
+| dedao | `dedao.cn` | 🔜 待实现 |
+| zhihu | `zhihu.com` | 🔜 待实现 |
+| default | 其他 | ✅ 回退配置 |
+
+---
+
+## 9. CLI 设计
 
 ### 8.1 命令行参数
 
@@ -685,7 +762,7 @@ main()
 
 ---
 
-## 9. 日志配置
+## 10. 日志配置
 
 ### 9.1 日志级别
 
@@ -705,7 +782,7 @@ main()
 
 ---
 
-## 10. 测试策略
+## 11. 测试策略
 
 ### 10.1 测试目录结构
 
@@ -735,7 +812,7 @@ tests/
 
 ---
 
-## 11. 安全设计
+## 12. 安全设计
 
 ### 11.1 Cookie 保护
 
@@ -760,7 +837,7 @@ def validate_url(url: str) -> bool:
 
 ---
 
-## 12. 性能优化
+## 13. 性能优化
 
 ### 12.1 浏览器复用
 

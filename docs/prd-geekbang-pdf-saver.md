@@ -22,6 +22,7 @@
 | 内容滚动加载 | 自动滚动加载 SPA 动态渲染的完整内容 | P0 |
 | 左侧导航隐藏 | 自动隐藏侧边栏，只保留文章内容 | P1 |
 | 页面标题命名 | 使用页面标题作为 PDF 文件名 | P2 |
+| 配置化平台支持 | CSS 选择器从 selectors.json 读取，支持多平台扩展 | P1 |
 
 ### 2.2 用户操作流程
 
@@ -112,6 +113,7 @@ geekbang-pdf/
 │       ├── constants.py     # 常量定义
 │       ├── javascript.py    # JavaScript 脚本管理
 │       ├── logging_config.py # 日志配置
+│       ├── selectors.py     # 平台选择器加载
 │       └── waits.py         # 等待策略
 ├── config/
 │   ├── config.py           # 配置文件管理（~/.geekbang-pdf/）
@@ -180,10 +182,12 @@ python main.py <url> -o ./output -n myfile --browser-login
 
 ## 7. 未来优化方向
 
-- [ ] 支持批量保存多个页面
-- [ ] 支持自定义 PDF 页面尺寸
+- [x] 支持批量保存多个页面
+- [x] 支持自定义 PDF 页面尺寸
+- [x] 配置化平台支持框架（selectors.json）
 - [ ] 支持保存代码块语法高亮
 - [ ] 支持生成分章节的 PDF
+- [ ] 支持更多平台（得到、知乎等）
 
 ## 8. 错误处理机制
 
