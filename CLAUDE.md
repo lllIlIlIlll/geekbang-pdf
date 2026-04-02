@@ -42,18 +42,54 @@ python main.py <url> -o ./output
 
 ```
 geekbang-pdf/
-├── main.py              # CLI 入口点
+├── main.py                 # CLI 入口点
 ├── src/
-│   ├── __init__.py      # 导出公共接口和异常类
-│   ├── auth.py          # Selenium 登录 / Chrome 会话
-│   ├── fetcher.py       # HTTP 页面获取
-│   ├── parser.py        # HTML 解析（用于静态页面）
-│   ├── converter.py     # Playwright PDF 生成
-│   └── exceptions.py    # 自定义异常
+│   ├── __init__.py         # 导出公共接口和异常类
+│   ├── core/               # 核心模块
+│   │   ├── __init__.py     # 核心模块导出
+│   │   ├── auth.py         # Selenium 登录 / Chrome 会话
+│   │   ├── fetcher.py      # HTTP 页面获取
+│   │   ├── parser.py       # HTML 解析（用于静态页面）
+│   │   ├── converter.py    # Playwright PDF 生成
+│   │   └── exceptions.py   # 自定义异常类
+│   ├── cli/                # CLI 模块
+│   │   ├── __init__.py
+│   │   ├── commands.py     # Click 命令定义
+│   │   └── formatters.py   # rich 输出格式化
+│   ├── models/             # 数据模型
+│   │   ├── __init__.py
+│   │   ├── config.py       # PDFConfig dataclass
+│   │   └── pdf_options.py  # PDFOptions dataclass
+│   └── utils/              # 工具模块
+│       ├── __init__.py
+│       ├── constants.py     # 常量定义（超时、页面尺寸等）
+│       ├── javascript.py    # JavaScript 脚本管理
+│       ├── logging_config.py # 日志配置
+│       └── waits.py         # 等待策略
 ├── config/
-│   └── config.py        # 配置文件管理（~/.geekbang-pdf/）
-├── requirements.txt     # Python 依赖
-└── package.json         # Node.js 依赖（Playwright）
+│   ├── __init__.py
+│   ├── config.py           # 配置文件管理（~/.geekbang-pdf/）
+│   └── selectors.json      # 网站选择器配置
+├── scripts/                # JavaScript 脚本（页面处理）
+│   ├── expand_content.js   # 内容区域展开
+│   ├── find_content.js     # 内容区域定位
+│   ├── hide_sidebar.js     # 侧边栏隐藏
+│   ├── remove_floating_layers.js # 浮层移除
+│   └── scroll_content.js   # 内容滚动加载
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py        # pytest 配置
+│   ├── unit/              # 单元测试
+│   │   ├── test_config.py
+│   │   └── test_exceptions.py
+│   ├── integration/        # 集成测试
+│   └── fixtures/          # 测试固件
+├── docs/                  # 文档目录
+├── out/                   # PDF 输出目录
+├── pyproject.toml          # 项目配置
+├── requirements.txt        # Python 依赖
+├── requirements-dev.txt    # 开发依赖
+└── package.json           # Node.js 依赖（Playwright）
 ```
 
 ## 核心实现细节
@@ -101,5 +137,5 @@ python main.py <url> --browser-login
 
 ### 代码规范
 - 使用类型提示（type hints）
-- 自定义异常继承自 `CustomError` 基类
+- 自定义异常继承自 `GeekBangError` 基类
 - 配置文件存储在 `~/.geekbang-pdf/` 目录
