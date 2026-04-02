@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .exceptions import ConversionError
+from .utils.constants import ConversionConstants, ViewportConstants
 
 
 def convert_with_context(url, context, output_path, options=None):
@@ -47,8 +48,8 @@ def convert_with_context(url, context, output_path, options=None):
 
         # Navigate to URL
         print(f"  正在打开: {url}")
-        page.goto(url, wait_until="load", timeout=60000)
-        page.wait_for_timeout(8000)
+        page.goto(url, wait_until="load", timeout=ConversionConstants.NAVIGATION_TIMEOUT_MS)
+        page.wait_for_timeout(ConversionConstants.PAGE_LOAD_WAIT_MS)
 
         # Remove floating layers
         print("  移除页面浮层...")
@@ -71,7 +72,7 @@ def convert_with_context(url, context, output_path, options=None):
             });
             toRemove.forEach(el => el.remove());
         }''')
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Hide left sidebar and expand content area
         print("  隐藏左侧导航栏并扩展内容区域...")
@@ -135,7 +136,7 @@ def convert_with_context(url, context, output_path, options=None):
 
             return { hiddenCount, contentEl: contentEl ? contentEl.className : null };
         }''')
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Get page title for filename
         page_title = page.title()
@@ -276,7 +277,7 @@ def convert_with_context(url, context, output_path, options=None):
             };
         }''')
         print(f"  滚动结果: {scroll_result}")
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(ConversionConstants.MEDIUM_WAIT_MS)
 
         # Get final page height
         final_height = page.evaluate("document.documentElement.scrollHeight")
@@ -284,14 +285,14 @@ def convert_with_context(url, context, output_path, options=None):
 
         # Scroll back to top
         page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Set viewport
-        viewport_width = 1920
-        viewport_height = max(final_height, 4000)
+        viewport_width = ViewportConstants.VIEWPORT_WIDTH
+        viewport_height = max(final_height, ViewportConstants.MIN_VIEWPORT_HEIGHT)
         print(f"  设置视口: {viewport_width} x {viewport_height}")
         page.set_viewport_size({"width": viewport_width, "height": viewport_height})
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(ConversionConstants.MEDIUM_WAIT_MS)
 
         # Ensure content area is expanded to full screen
         print("  确保内容区域全屏显示...")
@@ -330,7 +331,7 @@ def convert_with_context(url, context, output_path, options=None):
 
             return { expanded: false };
         }''')
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(ConversionConstants.SHORT_WAIT_MS)
 
         # Expand content container to full height
         print("  展开内容容器到完整高度...")
@@ -388,11 +389,11 @@ def convert_with_context(url, context, output_path, options=None):
             };
         }''')
         print(f"  展开结果: {expand_result}")
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(ConversionConstants.MEDIUM_WAIT_MS)
 
         # Generate PDF
-        content_height = expand_result.get('loadedScrollHeight', 25000)
-        pdf_width = 1920
+        content_height = expand_result.get('loadedScrollHeight', ViewportConstants.DEFAULT_CONTENT_HEIGHT)
+        pdf_width = ViewportConstants.VIEWPORT_WIDTH
         print(f"  正在生成 PDF (宽度: {pdf_width}px, 内容高度: {content_height}px)...")
 
         page.pdf(

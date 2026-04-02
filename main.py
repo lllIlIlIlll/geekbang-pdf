@@ -18,6 +18,7 @@ from src import (
 )
 from src.auth import login
 from src.converter import convert_with_cookie, convert_with_context
+from src.utils.constants import ConversionConstants, LoginConstants
 from playwright.sync_api import sync_playwright
 from config.config import (
     load_config,
@@ -131,7 +132,7 @@ def login_and_get_context(urls):
 
     # 步骤1: 打开登录页面
     print("正在打开登录页面...")
-    page.goto("https://account.geekbang.org/login", wait_until="load", timeout=60000)
+    page.goto("https://account.geekbang.org/login", wait_until="load", timeout=ConversionConstants.NAVIGATION_TIMEOUT_MS)
 
     # 等待用户登录 - 自动检测登录状态
     print("等待登录完成...")
@@ -158,8 +159,8 @@ def login_and_get_context(urls):
     }'''
 
     # 等待登录完成 - 轮询检查登录状态
-    max_wait_time = 120  # 最多等待 120 秒
-    poll_interval = 2  # 每 2 秒检查一次
+    max_wait_time = LoginConstants.MAX_LOGIN_WAIT_SECONDS
+    poll_interval = LoginConstants.LOGIN_POLL_INTERVAL_SECONDS
     elapsed = 0
     login_detected = False
 
@@ -191,7 +192,7 @@ def login_and_get_context(urls):
     # 如果超时且未检测到登录，等待用户操作
     if not login_detected:
         print("  等待超时，请在浏览器中完成登录...")
-        page.wait_for_timeout(30000)  # 再等待 30 秒
+        page.wait_for_timeout(ConversionConstants.LOGIN_TIMEOUT_EXTRA_MS)
 
     # 保存 Cookie
     cookies = context.cookies()

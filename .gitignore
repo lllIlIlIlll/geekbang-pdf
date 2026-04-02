@@ -1,28 +1,29 @@
-# macOS
-.DS_Store
+# Output directory for PDFs
+out/
 
-# Node.js
-node_modules/
-npm-debug.log*
-
-# Python
+# Python cache
 __pycache__/
 *.py[cod]
-*.egg-info/
-.eggs/
+*.pyc
+.pytest_cache/
 
-# Temporary files
-*.js
-!package.json
-!package-lock.json
-temp/
-tmp/
-output/
-tasks/
+# Virtual environments
+venv/
+env/
+.env
 
 # IDE
-.vscode/
 .idea/
+.vscode/
+*.swp
+*.swo
 
-# Export files
-filename.txt
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+
+# Logs
+*.log

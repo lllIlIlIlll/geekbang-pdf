@@ -1,9 +1,8 @@
 {
-  "name": "geekbang-pdf",
+  "name": "geekbang-pdf-playwright",
   "version": "1.0.0",
-  "description": "Save geekbang.org course pages as PDF files",
-  "main": "index.js",
-  "dependencies": {
-    "puppeteer": "^19.0.0"
+  "description": "Playwright browser automation for GeekBang PDF Saver",
+  "scripts": {
+    "install-browser": "playwright install chromium"
   }
 }
