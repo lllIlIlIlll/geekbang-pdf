@@ -16,8 +16,8 @@ from src import (
     ConversionError,
     ConfigError,
 )
-from src.auth import login
-from src.converter import convert_with_cookie, convert_with_context
+from src.core.auth import login
+from src.core.converter import convert_with_cookie, convert_with_context
 from src.utils.constants import ConversionConstants, LoginConstants
 from playwright.sync_api import sync_playwright
 from config.config import (

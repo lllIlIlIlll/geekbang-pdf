@@ -1,0 +1,20 @@
+# Development dependencies for GeekBang PDF Saver
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+
+# Code quality
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Type stubs
+types-requests>=2.28.0
+types-click>=8.1.0
+
+# Development tools
+ipython>=8.0.0
+jupyter>=1.0.0

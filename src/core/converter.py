@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from .exceptions import ConversionError
-from .utils.constants import ConversionConstants, ViewportConstants
+from ..utils.constants import ConversionConstants, ViewportConstants
 
 
 def convert_with_context(url, context, output_path, options=None):

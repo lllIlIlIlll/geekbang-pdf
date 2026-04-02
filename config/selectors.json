@@ -1,0 +1,50 @@
+{
+  "geekbang": {
+    "article_content": [
+      "[class*=\"article-content\"]",
+      "[class*=\"article-body\"]",
+      "[class*=\"contentWrap\"]",
+      "[class*=\"Index_contentWrap\"]",
+      "article",
+      "main"
+    ],
+    "scroll_container": [
+      "[class*=\"contentWrapper\"]",
+      "[class*=\"scroller\"]",
+      ".simplebar-content-wrapper"
+    ],
+    "sidebar": [
+      "[class*=\"Index_side\"]",
+      "[class*=\"sidebar\"]",
+      "[class*=\"catalog\"]"
+    ],
+    "fixed_elements": [
+      "[class*=\"modal\"]",
+      "[class*=\"popup\"]",
+      "[class*=\"overlay\"]",
+      "[class*=\"login-prompt\"]"
+    ],
+    "login_button": [
+      "[class*=\"login\"]",
+      "[class*=\"signin\"]"
+    ],
+    "user_info": [
+      ".user-info",
+      ".user-name",
+      ".avatar",
+      "[class*=\"loginSuccess\"]"
+    ]
+  },
+  "default": {
+    "article_content": [
+      "article",
+      "main",
+      ".content",
+      ".post-content"
+    ],
+    "scroll_container": [
+      "[class*=\"content\"]",
+      "[class*=\"article\"]"
+    ]
+  }
+}

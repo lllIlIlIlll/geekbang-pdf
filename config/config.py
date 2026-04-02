@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from src.exceptions import ConfigError
+from src.core.exceptions import ConfigError
 
 CONFIG_DIR = Path.home() / ".geekbang-pdf"
 CONFIG_FILE = CONFIG_DIR / "config.json"
