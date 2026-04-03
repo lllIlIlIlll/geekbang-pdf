@@ -1,0 +1,13 @@
+{
+  "project": {
+    "name": "geekbang-pdf",
+    "description": "将极客时间课程页面保存为 PDF 的 CLI 工具"
+  },
+  "completion": {
+    "showRemainingTokens": true,
+    "sound": false
+  },
+  "goals": {
+    "trackProgress": true
+  }
+}

@@ -30,3 +30,8 @@ node_modules/
 
 # Local config (cookie, etc.)
 .geekbang-pdf/
+
+# Claude Code
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
