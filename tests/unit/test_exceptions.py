@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.exceptions import (
+from src.core.exceptions import (
     AuthError,
     ConfigError,
     ConversionError,

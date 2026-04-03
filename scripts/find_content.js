@@ -1,19 +1,12 @@
 /**
  * Find the main content container on the page.
  * Looks for scrollable containers with substantial content.
+ * @param {string} selectorsJson - JSON string of platform selectors
  */
-function findContentContainer() {
-    const selectors = [
-        '[class*="article"]',
-        '[class*="content"]',
-        '[class*="article-content"]',
-        '[class*="post-content"]',
-        '[id*="article"]',
-        '[id*="content"]',
-        'main',
-        'article',
-        '.main-content'
-    ];
+function findContentContainer(selectorsJson) {
+    const selectors = JSON.parse(selectorsJson);
+    const articleContentSelectors = selectors.article_content || [];
+    const excludeClasses = selectors.exclude_classes || [];
 
     let contentContainer = null;
     let maxHeight = 0;
@@ -24,11 +17,9 @@ function findContentContainer() {
             style.overflow === 'auto' || style.overflow === 'scroll') {
             const rect = el.getBoundingClientRect();
             const scrollHeight = el.scrollHeight;
-            if (scrollHeight > maxHeight && rect.height > 500 &&
-                !el.className.includes('sidebar') &&
-                !el.className.includes('catalog') &&
-                !el.className.includes('menu') &&
-                !el.className.includes('nav')) {
+            const className = el.className || '';
+            const shouldExclude = excludeClasses.some(c => className.includes(c));
+            if (scrollHeight > maxHeight && rect.height > 500 && !shouldExclude) {
                 maxHeight = scrollHeight;
                 contentContainer = el;
             }
@@ -36,7 +27,7 @@ function findContentContainer() {
     });
 
     if (!contentContainer) {
-        for (const selector of selectors) {
+        for (const selector of articleContentSelectors) {
             const el = document.querySelector(selector);
             if (el) {
                 const rect = el.getBoundingClientRect();

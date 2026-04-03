@@ -1,8 +1,12 @@
 /**
  * Scroll content container to load all dynamic content.
  * Scrolls through the content to trigger lazy loading.
+ * @param {string} selectorsJson - JSON string of platform selectors
  */
-function scrollContentContainer() {
+function scrollContentContainer(selectorsJson) {
+    const selectors = JSON.parse(selectorsJson);
+    const excludeClasses = selectors.exclude_classes || [];
+
     let scrollContainer = null;
     let maxHeight = 0;
 
@@ -12,12 +16,9 @@ function scrollContentContainer() {
             style.overflow === 'auto' || style.overflow === 'scroll') {
             const scrollHeight = el.scrollHeight;
             const rect = el.getBoundingClientRect();
-            if (scrollHeight > maxHeight && rect.height > 500 &&
-                !el.className.includes('sidebar') &&
-                !el.className.includes('catalog') &&
-                !el.className.includes('menu') &&
-                !el.className.includes('nav') &&
-                !el.className.includes('list')) {
+            const className = el.className || '';
+            const shouldExclude = excludeClasses.some(c => className.includes(c));
+            if (scrollHeight > maxHeight && rect.height > 500 && !shouldExclude) {
                 maxHeight = scrollHeight;
                 scrollContainer = el;
             }

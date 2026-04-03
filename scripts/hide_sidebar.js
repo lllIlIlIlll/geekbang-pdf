@@ -1,14 +1,22 @@
 /**
  * Hide left sidebar and expand content area.
  * Hides the sidebar navigation and fixes right-side fixed elements.
+ * @param {string} selectorsJson - JSON string of platform selectors
  */
-function hideSidebarAndExpandContent() {
+function hideSidebarAndExpandContent(selectorsJson) {
+    const selectors = JSON.parse(selectorsJson);
+    const sidebarSelectors = selectors.sidebar || [];
+    const articleContentSelectors = selectors.article_content || [];
+    const scrollContainerSelectors = selectors.scroll_container || [];
+
     let hiddenCount = 0;
 
     // 1. Hide left sidebar
-    document.querySelectorAll('[class*="Index_side"]').forEach(el => {
-        el.style.display = 'none';
-        hiddenCount++;
+    sidebarSelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+            el.style.display = 'none';
+            hiddenCount++;
+        });
     });
 
     // 2. Hide right fixed elements
@@ -23,16 +31,8 @@ function hideSidebarAndExpandContent() {
     });
 
     // 3. Find and expand main content area
-    const contentSelectors = [
-        '[class*="Index_contentWrap"]',
-        '[class*="contentWrap"]',
-        '[class*="article-container"]',
-        'article',
-        'main'
-    ];
-
     let contentEl = null;
-    for (const sel of contentSelectors) {
+    for (const sel of articleContentSelectors) {
         const el = document.querySelector(sel);
         if (el) {
             const rect = el.getBoundingClientRect();
@@ -52,7 +52,11 @@ function hideSidebarAndExpandContent() {
         contentEl.style.height = '100%';
         contentEl.style.zIndex = '100';
 
-        const scrollContainer = contentEl.querySelector('[class*="contentWrapper"], [class*="scroller"], .simplebar-content-wrapper');
+        let scrollContainer = null;
+        for (const sel of scrollContainerSelectors) {
+            scrollContainer = contentEl.querySelector(sel);
+            if (scrollContainer) break;
+        }
         if (scrollContainer) {
             scrollContainer.style.position = 'absolute';
             scrollContainer.style.left = '0';

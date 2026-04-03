@@ -18,7 +18,7 @@ from config.config import (
     set_default_output_dir,
     safe_resolve_path,
 )
-from src.exceptions import ConfigError
+from src.core.exceptions import ConfigError
 
 
 class TestIsEncrypted:

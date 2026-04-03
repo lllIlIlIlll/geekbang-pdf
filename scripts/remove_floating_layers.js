@@ -1,20 +1,24 @@
 /**
  * Remove floating layers from the page.
  * Removes fixed/sticky positioned elements like modals, popups, overlays.
+ * @param {string} selectorsJson - JSON string of platform selectors
  */
-function removeFloatingLayers() {
+function removeFloatingLayers(selectorsJson) {
+    const selectors = JSON.parse(selectorsJson);
+    const fixedClassnames = selectors.fixed_classnames || [];
+    const fixedTexts = selectors.fixed_texts || [];
+
     const toRemove = [];
     document.querySelectorAll('*').forEach(el => {
         const style = window.getComputedStyle(el);
         if (style.position === 'fixed' || style.position === 'sticky') {
             const text = el.innerText || '';
             const classes = el.className || '';
-            if ((text.includes('登录') && text.includes('注册')) ||
-                text.includes('推荐试读') ||
-                text.includes('仅针对订阅') ||
-                classes.includes('modal') ||
-                classes.includes('popup') ||
-                classes.includes('overlay')) {
+            let shouldRemove = fixedTexts.some(t => text.includes(t));
+            if (!shouldRemove && fixedClassnames.length > 0) {
+                shouldRemove = fixedClassnames.some(c => classes.includes(c));
+            }
+            if (shouldRemove) {
                 toRemove.push(el);
             }
         }

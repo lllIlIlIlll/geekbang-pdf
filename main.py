@@ -17,7 +17,8 @@ from src import (
     ConfigError,
 )
 from src.core.auth import login
-from src.core.converter import convert_with_cookie, convert_with_context
+from src.core.converter import convert_with_context
+from src.models.pdf_options import PDFOptions
 from src.utils.constants import ConversionConstants, LoginConstants
 from playwright.sync_api import sync_playwright
 from config.config import (
@@ -238,10 +239,10 @@ def browser_login_and_save(args):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get PDF options
-    pdf_options = {
-        "page_size": args.page_size,
-        "landscape": args.landscape
-    }
+    pdf_options = PDFOptions(
+        page_size=args.page_size,
+        landscape=args.landscape
+    )
 
     # Login and get browser context
     context, cookie_str, playwright_instance = login_and_get_context(urls)
@@ -335,10 +336,10 @@ def save_page(args):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pdf_options = {
-        "page_size": args.page_size,
-        "landscape": args.landscape
-    }
+    pdf_options = PDFOptions(
+        page_size=args.page_size,
+        landscape=args.landscape
+    )
 
     print(f"\n待处理的 URL 数量: {len(urls)}")
 
