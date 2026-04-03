@@ -41,6 +41,8 @@ GeekBang PDF Saver 是一个基于浏览器自动化的 CLI 工具，通过 Play
 | 模块 | 职责 | 依赖 |
 |------|------|------|
 | `main.py` | CLI 参数解析，流程编排 | argparse, all modules |
+| `run.sh` | 交互式启动脚本 | bash |
+| `install.sh` | 安装脚本 | bash, pip, npm |
 | `src/core/auth.py` | 浏览器登录认证，Chrome 会话管理 | Selenium, Playwright |
 | `src/core/converter.py` | PDF 生成核心逻辑，页面处理 | Playwright |
 | `src/core/fetcher.py` | HTTP 页面获取（备用） | requests |
@@ -340,22 +342,9 @@ from src import (
     AuthError,
     ConversionError,
     ConfigError,
-    # Auth
-    login,
-    login_with_cookie,
-    get_cookies_from_existing_chrome,
-    # Converter
-    convert_with_context,
-    convert_with_cookie,
-    convert_chrome_page_to_pdf,
-    # Fetcher
-    fetch_page,
-    validate_url,
-    parse_cookie_string,
-    # Parser
-    process_html,
-    extract_article_content,
 )
+
+__version__ = "1.0.0"
 ```
 
 ### 3.2 核心模块接口 (src/core/__init__.py)
@@ -371,12 +360,8 @@ from src.core import (
     ConfigError,
     # Auth
     login,
-    login_with_cookie,
-    get_cookies_from_existing_chrome,
     # Converter
     convert_with_context,
-    convert_with_cookie,
-    convert_chrome_page_to_pdf,
     # Fetcher
     fetch_page,
     validate_url,
@@ -385,6 +370,7 @@ from src.core import (
     process_html,
     extract_article_content,
 )
+```
 ```
 
 ---
@@ -517,7 +503,7 @@ except GeekBangError as e:
 
 ### 6.1 配置文件位置
 
-- 路径: `~/.geekbang-pdf/config.json`
+- 路径: `config/config.json`（项目目录下）
 - 权限: 600 (仅所有者读写)
 
 ### 6.2 配置结构
@@ -713,7 +699,38 @@ page.evaluate(f'''((selectors) => {{
 
 ## 9. CLI 设计
 
-### 8.1 命令行参数
+### 9.1 启动脚本 (run.sh)
+
+交互式启动脚本，提供简化的用户接口：
+
+```bash
+./run.sh                 # 交互式输入 URL
+./run.sh <url>          # 下载单篇文章
+./run.sh --batch        # 批量下载（使用 urls_batch.txt）
+./run.sh --login        # 浏览器登录
+./run.sh -h             # 显示帮助
+```
+
+**特性：**
+- 自动检测 Python 命令（优先 python3，回退 python）
+- Cookie 无效时自动跳转浏览器登录
+- 支持批量下载模式
+
+### 9.2 安装脚本 (install.sh)
+
+一键安装所有依赖：
+
+```bash
+./install.sh            # 运行安装
+./install.sh --help     # 显示帮助
+```
+
+**安装内容：**
+- Python 依赖 (pip)
+- Node.js 依赖 (npm)
+- Playwright 浏览器驱动
+
+### 9.3 命令行参数
 
 ```python
 # 位置参数
@@ -733,7 +750,7 @@ url: str                  # 极客时间文章 URL（支持多个）
 --set-default-dir DIR    # 设置默认输出目录
 ```
 
-### 8.2 命令执行流程
+### 9.4 命令执行流程
 
 ```
 main()
@@ -756,6 +773,10 @@ main()
   └─ 默认 ───────────────────▶ save_page()
        │                            │
        │                            ├── 获取 Cookie
+       │                            │     │
+       │                            │     ├─ Cookie 有效 ──▶ 批量转换 PDF
+       │                            │     │
+       │                            │     └─ Cookie 无效 ──▶ 自动跳转浏览器登录
        │                            │
        │                            └── 批量转换 PDF
 ```
@@ -764,7 +785,7 @@ main()
 
 ## 10. 日志配置
 
-### 9.1 日志级别
+### 10.1 日志级别
 
 | 级别 | 使用场景 |
 |------|----------|
@@ -773,7 +794,7 @@ main()
 | WARNING | 警告信息 |
 | ERROR | 错误信息 |
 
-### 9.2 日志格式
+### 10.2 日志格式
 
 ```python
 %(asctime)s - %(name)s - %(levelname)s - %(message)s
@@ -784,27 +805,29 @@ main()
 
 ## 11. 测试策略
 
-### 10.1 测试目录结构
+### 11.1 测试目录结构
 
 ```
 tests/
 ├── __init__.py
 ├── conftest.py           # pytest 配置
 ├── unit/                 # 单元测试
+│   ├── __init__.py
 │   ├── test_config.py
 │   └── test_exceptions.py
 ├── integration/          # 集成测试
+│   └── __init__.py
 └── fixtures/            # 测试固件
 ```
 
-### 10.2 单元测试覆盖
+### 11.2 单元测试覆盖
 
 | 模块 | 测试项 |
 |------|--------|
 | `config.py` | 配置加载/保存、Cookie 加解密 |
 | `exceptions.py` | 异常创建、错误码验证 |
 
-### 10.3 集成测试
+### 11.3 集成测试
 
 - 完整的浏览器登录流程
 - PDF 生成和保存
@@ -814,19 +837,19 @@ tests/
 
 ## 12. 安全设计
 
-### 11.1 Cookie 保护
+### 12.1 Cookie 保护
 
 - 使用 Fernet 对称加密存储
 - 文件权限 600
 - 内存中解密使用后及时清理
 
-### 11.2 路径安全
+### 12.2 路径安全
 
-- 配置目录隔离在 `~/.geekbang-pdf/`
+- 配置目录隔离在项目 `config/` 目录
 - 输出路径做相对路径检查
 - 防止路径穿越攻击
 
-### 11.3 输入验证
+### 12.3 输入验证
 
 ```python
 def validate_url(url: str) -> bool:
@@ -839,22 +862,22 @@ def validate_url(url: str) -> bool:
 
 ## 13. 性能优化
 
-### 12.1 浏览器复用
+### 13.1 浏览器复用
 
 - 多个 URL 共用同一浏览器上下文
 - 避免重复启动浏览器
 
-### 12.2 内容加载
+### 13.2 内容加载
 
 - 滚动加载使用间歇性暂停
 - 避免一次性滚动到底部导致内容截断
 
-### 12.3 并发处理
+### 13.3 并发处理
 
 - 当前版本串行处理多 URL
 - 未来可考虑并发处理（需考虑登录状态共享）
 
 ---
 
-*文档版本: 1.0.0*
-*最后更新: 2026-04-02*
+*文档版本: 1.1.0*
+*最后更新: 2026-04-03*

@@ -310,14 +310,16 @@ def save_page(args):
     elif args.use_config or args.use_chrome:
         cookie = get_cookie()
         if not cookie:
-            print("错误: 没有保存的 Cookie，请先登录")
-            return 1
+            print("没有保存的 Cookie 或 Cookie 已过期，自动跳转浏览器登录...")
+            # 自动跳转浏览器登录
+            return browser_login_and_save(args)
     else:
         cookie = get_cookie()
 
     if not cookie:
-        print("错误: 没有可用的 Cookie")
-        return 1
+        print("没有可用的 Cookie，自动跳转浏览器登录...")
+        # 自动跳转浏览器登录
+        return browser_login_and_save(args)
 
     # Collect all URLs
     urls = list(args.url)

@@ -16,6 +16,7 @@
 |------|------|--------|
 | 浏览器登录 | 自动弹出浏览器引导用户登录，无需手动获取 Cookie | P0 |
 | 自动登录检测 | 轮询检测登录状态，登录成功后自动继续 | P0 |
+| Cookie 失效自动登录 | 使用已保存 Cookie 时自动检测有效性，无效则跳转登录 | P0 |
 | PDF 生成 | 将课程页面保存为 PDF，支持完整内容 | P0 |
 | Cookie 保存 | 登录成功后自动保存 Cookie 到配置文件 | P0 |
 | 多标签页处理 | 登录页和文章页在不同标签页 | P1 |
@@ -95,6 +96,8 @@ article_page.pdf(
 ```
 geekbang-pdf/
 ├── main.py                 # CLI 入口点
+├── run.sh                  # 交互式启动脚本
+├── install.sh              # 安装脚本
 ├── src/
 │   ├── __init__.py         # 导出公共接口和异常类
 │   ├── core/               # 核心模块
@@ -116,7 +119,7 @@ geekbang-pdf/
 │       ├── selectors.py     # 平台选择器加载
 │       └── waits.py         # 等待策略
 ├── config/
-│   ├── config.py           # 配置文件管理（~/.geekbang-pdf/）
+│   ├── config.py           # 配置文件管理（项目 config/ 目录）
 │   └── selectors.json      # 网站选择器配置
 ├── scripts/                 # JavaScript 脚本
 │   ├── expand_content.js    # 内容区域展开
@@ -134,7 +137,17 @@ geekbang-pdf/
 
 ## 4. 命令行接口
 
-### 4.1 选项
+### 4.1 启动脚本（推荐）
+
+```bash
+./run.sh                 # 交互式输入 URL
+./run.sh <url>          # 下载单篇文章
+./run.sh --batch        # 批量下载（使用 urls_batch.txt）
+./run.sh --login        # 浏览器登录
+./run.sh -h             # 显示帮助
+```
+
+### 4.2 Python CLI 选项
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
@@ -148,22 +161,31 @@ geekbang-pdf/
 | `--page-size` | PDF 页面大小 | A4 |
 | `--landscape` | 使用横向 | false |
 
-### 4.2 使用示例
+### 4.3 使用示例
 
 ```bash
-# 推荐：自动浏览器登录
-python main.py <url> --browser-login
+# 推荐：使用启动脚本
+./run.sh <url>
 
-# 使用已保存的 Cookie
-python main.py <url> --use-config
+# 交互式输入 URL
+./run.sh
+
+# 批量下载
+./run.sh --batch
+
+# Python CLI：自动浏览器登录
+python3 main.py <url> --browser-login
+
+# Python CLI：使用已保存的 Cookie（Cookie 无效时自动跳转登录）
+python3 main.py <url> --use-config
 
 # 指定输出目录和文件名
-python main.py <url> -o ./output -n myfile --browser-login
+python3 main.py <url> -o ./output -n myfile --browser-login
 ```
 
 ## 5. 配置文件
 
-路径：`~/.geekbang-pdf/config.json`
+路径：`config/config.json`（项目目录下）
 
 ```json
 {
@@ -174,22 +196,57 @@ python main.py <url> -o ./output -n myfile --browser-login
 
 ## 6. 成功标准
 
-- [ ] 给定有效 URL，能够成功生成 PDF 文件
-- [ ] PDF 中包含完整的文章文字内容
-- [ ] 左侧导航栏已被隐藏
-- [ ] Cookie 自动保存，下次无需重复登录
-- [ ] 错误提示信息清晰
+- [x] 给定有效 URL，能够成功生成 PDF 文件
+- [x] PDF 中包含完整的文章文字内容
+- [x] 左侧导航栏已被隐藏
+- [x] Cookie 自动保存，下次无需重复登录
+- [x] Cookie 失效时自动跳转浏览器登录
+- [x] 错误提示信息清晰
 
 ## 7. 未来优化方向
 
 - [x] 支持批量保存多个页面
 - [x] 支持自定义 PDF 页面尺寸
 - [x] 配置化平台支持框架（selectors.json）
+- [x] Cookie 失效自动登录
 - [ ] 支持保存代码块语法高亮
 - [ ] 支持生成分章节的 PDF
 - [ ] 支持更多平台（得到、知乎等）
 
-## 8. 错误处理机制
+## 8. 安装与脚本
+
+### 8.1 安装脚本 (install.sh)
+
+一键安装所有依赖：
+
+```bash
+./install.sh            # 运行安装
+./install.sh --help     # 显示帮助
+```
+
+**安装内容：**
+- Python 依赖 (pip)
+- Node.js 依赖 (npm)
+- Playwright 浏览器驱动
+
+### 8.2 启动脚本 (run.sh)
+
+交互式启动脚本，提供简化的用户接口：
+
+```bash
+./run.sh                 # 交互式输入 URL
+./run.sh <url>          # 下载单篇文章
+./run.sh --batch        # 批量下载（使用 urls_batch.txt）
+./run.sh --login        # 浏览器登录
+./run.sh -h             # 显示帮助
+```
+
+**特性：**
+- 自动检测 Python 命令（优先 python3，回退 python）
+- Cookie 无效时自动跳转浏览器登录
+- 支持批量下载模式
+
+## 9. 错误处理机制
 
 ### 8.1 异常体系
 
@@ -227,9 +284,9 @@ python main.py <url> -o ./output -n myfile --browser-login
 | Cookie 加密失败 | CONFIG_002 | Cookie 加密失败 |
 | Cookie 解密失败 | CONFIG_003 | Cookie 解密失败 |
 
-## 9. 数据模型定义
+## 10. 数据模型定义
 
-### 9.1 PDFConfig
+### 10.1 PDFConfig
 
 应用程序配置数据类：
 
@@ -242,7 +299,7 @@ class PDFConfig:
     landscape: bool = False                # 默认横向模式
 ```
 
-### 9.2 PDFOptions
+### 10.2 PDFOptions
 
 PDF 生成选项数据类：
 
@@ -258,21 +315,21 @@ class PDFOptions:
     margin_right: str = "15mm"            # 右边距
 ```
 
-## 10. 安全考虑
+## 11. 安全考虑
 
-### 10.1 认证安全
+### 11.1 认证安全
 
-- ✅ Cookie 存储在用户本地 `~/.geekbang-pdf/` 目录
+- ✅ Cookie 存储在项目 `config/` 目录
 - ✅ Cookie 存储采用 Fernet 对称加密（cryptography 库）
 - ⚠️ 当前无 Cookie 过期机制，需手动刷新
 
-### 10.2 输入验证
+### 11.2 输入验证
 
 - ✅ URL 格式验证（必须是 geekbang.org 域名）
 - ✅ 路径穿越防护（ConfigError.PATH_TRAVERSAL_BLOCKED）
 - ⚠️ 建议定期更换 Cookie
 
-### 10.3 安全建议
+### 11.3 安全建议
 
 1. **Cookie 管理**
    - 定期使用 `--browser-login` 刷新会话
@@ -286,9 +343,9 @@ class PDFOptions:
    - 所有请求通过 HTTPS 进行
    - 不传输明文敏感信息
 
-## 11. 非功能性需求
+## 12. 非功能性需求
 
-### 11.1 性能需求
+### 12.1 性能需求
 
 | 指标 | 要求 |
 |------|------|
@@ -297,7 +354,7 @@ class PDFOptions:
 | 内存占用峰值 | < 500MB |
 | 浏览器启动时间 | < 5 秒 |
 
-### 11.2 兼容性需求
+### 12.2 兼容性需求
 
 | 项目 | 要求 |
 |------|------|
@@ -306,7 +363,7 @@ class PDFOptions:
 | 操作系统 | macOS / Linux / Windows |
 | 浏览器 | Chromium（通过 Playwright 安装） |
 
-### 11.3 依赖版本
+### 12.3 依赖版本
 
 | 依赖 | 最低版本 |
 |------|----------|
@@ -317,7 +374,7 @@ class PDFOptions:
 | websocket-client | >=1.5.0 |
 | cryptography | >=41.0.0 |
 
-### 11.4 页面尺寸支持
+### 12.4 页面尺寸支持
 
 | 尺寸 | 宽度 | 高度 |
 |------|------|------|
@@ -325,9 +382,9 @@ class PDFOptions:
 | Letter | 8.5in | 11in |
 | Legal | 8.5in | 14in |
 
-### 11.5 可用性需求
+### 12.5 可用性需求
 
-- [ ] 错误信息本地化（中文）
-- [ ] 命令行帮助信息完整
-- [ ] 支持 Ctrl+C 中断
-- [ ] 进度提示清晰
+- [x] 错误信息本地化（中文）
+- [x] 命令行帮助信息完整
+- [x] 支持 Ctrl+C 中断
+- [x] 进度提示清晰
