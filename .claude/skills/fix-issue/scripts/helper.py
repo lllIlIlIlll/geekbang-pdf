@@ -56,8 +56,9 @@ def _check_auth() -> dict:
             ['python3', '-c', '''
 import sys
 sys.path.insert(0, ".")
-from src.core.auth import is_authenticated
-print(is_authenticated())
+from config import get_cookie
+cookie = get_cookie()
+print("OK" if cookie else "NO_COOKIE")
 '''],
             capture_output=True,
             text=True,
@@ -66,7 +67,9 @@ print(is_authenticated())
         if result.returncode != 0:
             return {'status': 'error', 'message': result.stderr.strip() or '认证检查失败'}
         output = result.stdout.strip()
-        return {'status': 'ok' if output == 'True' else 'error', 'message': f'认证状态: {output}'}
+        if output == 'OK':
+            return {'status': 'ok', 'message': 'Cookie 存在，认证可用'}
+        return {'status': 'error', 'message': 'Cookie 不存在或已过期'}
     except subprocess.TimeoutExpired:
         return {'status': 'error', 'message': '认证检查超时'}
     except FileNotFoundError:

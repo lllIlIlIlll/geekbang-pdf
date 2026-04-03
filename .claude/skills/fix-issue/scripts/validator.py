@@ -34,8 +34,9 @@ def _validate_cookie(target=None) -> dict:
             ['python3', '-c', '''
 import sys
 sys.path.insert(0, ".")
-from src.core.auth import is_authenticated
-print(is_authenticated())
+from config import get_cookie
+cookie = get_cookie()
+print("VALID" if cookie else "INVALID")
 '''],
             capture_output=True,
             text=True,
@@ -43,8 +44,9 @@ print(is_authenticated())
         )
         if result.returncode != 0:
             return {'valid': False, 'message': result.stderr.strip() or '验证失败'}
-        success = result.stdout.strip() == 'True'
-        return {'valid': success, 'message': 'Cookie 有效' if success else 'Cookie 无效'}
+        output = result.stdout.strip()
+        success = output == 'VALID'
+        return {'valid': success, 'message': 'Cookie 有效' if success else 'Cookie 无效或已过期'}
     except subprocess.TimeoutExpired:
         return {'valid': False, 'message': '验证超时'}
     except FileNotFoundError:
@@ -62,10 +64,26 @@ def _validate_selector(target=None) -> dict:
         result = subprocess.run(
             ['python3', '-c', f'''
 import sys
+import json
 sys.path.insert(0, ".")
-from config.config import get_selector
-selector = get_selector("{target}")
-print(selector if selector else "NOT_FOUND")
+with open("config/selectors.json") as f:
+    selectors = json.load(f)
+
+# 解析目标路径（如 "geekbang.article_content"）
+parts = "{target}".split(".")
+current = selectors
+for part in parts:
+    if isinstance(current, dict) and part in current:
+        current = current[part]
+    else:
+        print("NOT_FOUND")
+        sys.exit(0)
+
+# 检查是否有值
+if current:
+    print("OK:" + str(current)[:50])
+else:
+    print("EMPTY")
 '''],
             capture_output=True,
             text=True,
@@ -73,7 +91,9 @@ print(selector if selector else "NOT_FOUND")
         )
         output = result.stdout.strip()
         if output == 'NOT_FOUND':
-            return {'valid': False, 'message': f'选择器 "{target}" 不存在'}
+            return {'valid': False, 'message': f'选择器路径 "{target}" 不存在'}
+        if output == 'EMPTY':
+            return {'valid': False, 'message': f'选择器路径 "{target}" 为空'}
         if result.returncode != 0:
             return {'valid': False, 'message': result.stderr.strip()}
         return {'valid': True, 'message': f'选择器正常: {output}'}
