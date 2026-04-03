@@ -11,7 +11,7 @@ def validate_fix(fix_type: str, target: str = None) -> dict:
     验证修复结果
 
     Args:
-        fix_type: 修复类型 (cookie, selector, etc)
+        fix_type: 修复类型 (cookie, selector, pdf)
         target: 修复目标（可选）
 
     Returns:
@@ -29,16 +29,28 @@ def validate_fix(fix_type: str, target: str = None) -> dict:
 
 def _validate_cookie(target=None) -> dict:
     """验证 Cookie 修复"""
-    result = subprocess.run(
-        ['python3', '-c', 'from src.core.auth import validate_cookie; print(validate_cookie())'],
-        capture_output=True,
-        text=True
-    )
-    success = result.returncode == 0 and 'True' in result.stdout
-    return {
-        'valid': success,
-        'message': 'Cookie 有效' if success else 'Cookie 无效'
-    }
+    try:
+        result = subprocess.run(
+            ['python3', '-c', '''
+import sys
+sys.path.insert(0, ".")
+from src.core.auth import is_authenticated
+print(is_authenticated())
+'''],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            return {'valid': False, 'message': result.stderr.strip() or '验证失败'}
+        success = result.stdout.strip() == 'True'
+        return {'valid': success, 'message': 'Cookie 有效' if success else 'Cookie 无效'}
+    except subprocess.TimeoutExpired:
+        return {'valid': False, 'message': '验证超时'}
+    except FileNotFoundError:
+        return {'valid': False, 'message': 'Python3 未找到'}
+    except Exception as e:
+        return {'valid': False, 'message': f'验证异常: {e}'}
 
 
 def _validate_selector(target=None) -> dict:
@@ -46,15 +58,31 @@ def _validate_selector(target=None) -> dict:
     if not target:
         return {'valid': False, 'message': '未指定选择器目标'}
 
-    result = subprocess.run(
-        ['python3', '-c', f'from config.selectors import test; print(test("{target}"))'],
-        capture_output=True,
-        text=True
-    )
-    return {
-        'valid': result.returncode == 0,
-        'message': result.stdout.strip()
-    }
+    try:
+        result = subprocess.run(
+            ['python3', '-c', f'''
+import sys
+sys.path.insert(0, ".")
+from config.config import get_selector
+selector = get_selector("{target}")
+print(selector if selector else "NOT_FOUND")
+'''],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        output = result.stdout.strip()
+        if output == 'NOT_FOUND':
+            return {'valid': False, 'message': f'选择器 "{target}" 不存在'}
+        if result.returncode != 0:
+            return {'valid': False, 'message': result.stderr.strip()}
+        return {'valid': True, 'message': f'选择器正常: {output}'}
+    except subprocess.TimeoutExpired:
+        return {'valid': False, 'message': '验证超时'}
+    except FileNotFoundError:
+        return {'valid': False, 'message': 'Python3 未找到'}
+    except Exception as e:
+        return {'valid': False, 'message': f'验证异常: {e}'}
 
 
 def _validate_pdf(target=None) -> dict:
@@ -66,15 +94,38 @@ def _validate_pdf(target=None) -> dict:
     if not pdf_path.exists():
         return {'valid': False, 'message': f'PDF 文件不存在: {target}'}
 
-    result = subprocess.run(
-        ['pdfinfo', target],
-        capture_output=True,
-        text=True
-    )
-    return {
-        'valid': result.returncode == 0,
-        'message': f'PDF 页面数: {len([l for l in result.stdout.splitlines() if "Pages:" in l])}'
-    }
+    if not pdf_path.suffix.lower() == '.pdf':
+        return {'valid': False, 'message': f'不是 PDF 文件: {target}'}
+
+    try:
+        result = subprocess.run(
+            ['pdfinfo', str(pdf_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            return {'valid': False, 'message': 'PDF 信息读取失败'}
+
+        # 解析页面数
+        pages = 0
+        for line in result.stdout.splitlines():
+            if 'Pages:' in line:
+                try:
+                    pages = int(line.split(':')[-1].strip())
+                except ValueError:
+                    pass
+                break
+
+        if pages > 0:
+            return {'valid': True, 'message': f'PDF 正常，页面数: {pages}'}
+        return {'valid': False, 'message': '无法解析 PDF 页面数'}
+    except FileNotFoundError:
+        return {'valid': False, 'message': 'pdfinfo 未安装，请安装 poppler-utils'}
+    except subprocess.TimeoutExpired:
+        return {'valid': False, 'message': 'PDF 信息读取超时'}
+    except Exception as e:
+        return {'valid': False, 'message': f'验证异常: {e}'}
 
 
 def _validate_general(target=None) -> dict:

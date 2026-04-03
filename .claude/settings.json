@@ -1,13 +1,26 @@
 {
-  "project": {
-    "name": "geekbang-pdf",
-    "description": "将极客时间课程页面保存为 PDF 的 CLI 工具"
-  },
-  "completion": {
-    "showRemainingTokens": true,
-    "sound": false
-  },
-  "goals": {
-    "trackProgress": true
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{YOUR_TEST_CMD} 2>&1 | tail -20"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "运行完整测试套件确认所有测试通过。未通过前不结束，继续修复。",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
   }
 }
