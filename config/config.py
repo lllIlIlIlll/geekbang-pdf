@@ -6,7 +6,8 @@ from typing import Optional
 
 from src.core.exceptions import ConfigError
 
-CONFIG_DIR = Path.home() / ".geekbang-pdf"
+# Use project directory instead of home directory
+CONFIG_DIR = Path(__file__).parent.parent / ".geekbang-pdf"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 KEY_FILE = CONFIG_DIR / "key.key"
 

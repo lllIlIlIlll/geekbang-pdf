@@ -27,3 +27,6 @@ node_modules/
 
 # Logs
 *.log
+
+# Local config (cookie, etc.)
+.geekbang-pdf/
