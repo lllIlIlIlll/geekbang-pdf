@@ -1,9 +1,13 @@
 """
 诊断问题的辅助函数
+
+用法：python3 helper.py <issue_type>
+类型：pdf_blank, login_failed, content_truncate
 """
 
-import subprocess
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -97,5 +101,15 @@ def _check_selectors() -> dict:
 
 
 def _check_general() -> dict:
-    """通用检查"""
-    return {'status': 'ok', 'message': '未知的诊断类型'}
+    """未知类型的 fallback — 明确提示不支持"""
+    return {'status': 'warning', 'message': '不支持的诊断类型，请手动排查'}
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 helper.py <issue_type>")
+        print("Types: pdf_blank, login_failed, content_truncate")
+        sys.exit(1)
+    _type = sys.argv[1]
+    result = diagnose_issue(_type)
+    print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -1,8 +1,13 @@
 """
 验证修复结果的函数
+
+用法：python3 validator.py <fix_type> [target]
+类型：cookie, selector, pdf
 """
 
+import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -149,5 +154,16 @@ def _validate_pdf(target=None) -> dict:
 
 
 def _validate_general(target=None) -> dict:
-    """通用验证"""
-    return {'valid': True, 'message': '验证通过'}
+    """未知类型的 fallback — 返回失败，避免误报"""
+    return {'valid': False, 'message': '不支持的验证类型，请手动验证'}
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 validator.py <fix_type> [target]")
+        print("Types: cookie, selector, pdf")
+        sys.exit(1)
+    _type = sys.argv[1]
+    _target = sys.argv[2] if len(sys.argv) > 2 else None
+    result = validate_fix(_type, _target)
+    print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -126,13 +126,13 @@ def load_config():
     """
     ensure_config_dir()
     if not CONFIG_FILE.exists():
-        return {"cookie": None, "default_output_dir": str(_get_project_out_dir())}
+        return {"cookie": None, "default_output_dir": None}
 
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
-        return {"cookie": None, "default_output_dir": str(_get_project_out_dir())}
+        return {"cookie": None, "default_output_dir": None}
 
 
 def save_config(config):
@@ -191,10 +191,15 @@ def get_default_output_dir() -> str:
     """Get the default output directory.
 
     Returns:
-        str: Default output directory path (project's out directory)
+        str: Default output directory path (current working directory)
     """
-    # Always use project's out directory as default
-    return str(_get_project_out_dir())
+    # Check config file first
+    config = load_config()
+    stored_dir = config.get("default_output_dir")
+    if stored_dir:
+        return stored_dir
+    # Fall back to current working directory as default
+    return str(Path.cwd())
 
 
 def set_default_output_dir(output_dir: str) -> None:
